@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/sedmess/go-ctx-base/actuator"
 	"github.com/sedmess/go-ctx-base/db"
 	"github.com/sedmess/go-ctx-base/httpserver"
@@ -54,42 +53,47 @@ type messageController struct {
 }
 
 func (c *messageController) Init() {
-	c.server.RegisterRoute(rest.Post("/messages", httpserver.RequestHandler[string](c.l).HandleRequestBody(c.newMessage)))
-	c.server.RegisterRoute(rest.Get("/messages", httpserver.RequestHandler[any](c.l).HandleRequest(c.getMessages)))
+	httpserver.BuildTypedRoute[string](c.server).Method(http.MethodPost).Path("/messages").Handler(c.newMessage)
+	httpserver.BuildRoute(c.server).Method(http.MethodGet).Path("/messages").Handler(c.getMessages)
 }
 
-func (c *messageController) newMessage(request *httpserver.RequestData, body string) (any, int, error) {
+func (c *messageController) newMessage(request *httpserver.RequestData, body string) (rs httpserver.Response) {
 	from := request.Query().Get("from")
 	to := request.Query().Get("to")
 
-	if from == "" || to == "" {
-		return nil, http.StatusBadRequest, nil
+	if !rs.VerifyNotEmpty(from, to) {
+		return
 	}
 
 	if err := c.messageService.SaveMessage(from, to, body); err != nil {
-		return nil, 0, err
+		rs.Error(err)
+		return
 	} else {
-		return nil, http.StatusCreated, nil
+		rs.Status(http.StatusCreated)
+		return
 	}
 }
 
-func (c *messageController) getMessages(request *httpserver.RequestData) (any, int, error) {
+func (c *messageController) getMessages(request *httpserver.RequestData) (rs httpserver.Response) {
 	to := request.Query().Get("to")
 	sinceStr := request.Query().Get("since")
 
-	if to == "" || sinceStr == "" {
-		return nil, http.StatusBadRequest, nil
+	if !rs.VerifyNotEmpty(to, sinceStr) {
+		return
 	}
 
 	since, err := strconv.ParseInt(sinceStr, 10, 64)
 	if err != nil {
-		return nil, http.StatusBadRequest, nil
+		rs.BadRequest()
+		return
 	}
 
 	if messages, err := c.messageService.GetMessages(to, since); err != nil {
-		return nil, 0, err
+		rs.Error(err)
+		return
 	} else {
-		return messages, http.StatusOK, nil
+		rs.Content(messages)
+		return
 	}
 }
 

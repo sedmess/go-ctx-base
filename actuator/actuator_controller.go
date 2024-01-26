@@ -1,7 +1,6 @@
 package actuator
 
 import (
-	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/sedmess/go-ctx-base/httpserver"
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/logger"
@@ -23,19 +22,20 @@ func (instance *controller) Init(provider ctx.ServiceProvider) {
 
 	instance.l.Info("register on server", instance.serverServiceName)
 
-	server.RegisterRoute(rest.Get("/actuator/health", httpserver.RequestHandler[any](instance.l).Handle(instance.health)))
-	server.RegisterRoute(rest.Get("/actuator/services", httpserver.RequestHandler[any](instance.l).Handle(instance.services)))
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health").Handler(instance.health)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/services").Handler(instance.services)
 }
 
 func (instance *controller) Name() string {
 	return controllerName
 }
 
-func (instance *controller) health() (any, int, error) {
-	return instance.appContext.Health().Aggregate(), http.StatusOK, nil
+func (instance *controller) health(*httpserver.RequestData) (rs httpserver.Response) {
+	rs.Ok().Content(instance.appContext.Health().Aggregate())
+	return
 }
 
-func (instance *controller) services() (any, int, error) {
+func (instance *controller) services(*httpserver.RequestData) (rs httpserver.Response) {
 	services := instance.appContext.Stats().Services()
 	result := make(map[string]ServiceDescription)
 	for _, descriptor := range services {
@@ -47,5 +47,6 @@ func (instance *controller) services() (any, int, error) {
 		srv.Dependencies = descriptor.Dependencies
 		result[descriptor.Name] = srv
 	}
-	return result, http.StatusOK, nil
+	rs.Ok().Content(result)
+	return
 }

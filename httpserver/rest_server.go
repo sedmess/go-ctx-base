@@ -32,7 +32,9 @@ func NewRestServer(name string, configPrefix string) RestServer {
 
 type RestServer interface {
 	SetupAuthentication(authenticator Authenticator)
-	RegisterRoute(route *rest.Route)
+
+	registerRoute(route *rest.Route)
+	logger() logger.Logger
 }
 
 type restServer struct {
@@ -97,11 +99,15 @@ func (instance *restServer) Name() string {
 	return instance.name
 }
 
+func (instance *restServer) logger() logger.Logger {
+	return instance.l
+}
+
 func (instance *restServer) SetupAuthentication(authenticator Authenticator) {
 	instance.authenticator = authenticator
 }
 
-func (instance *restServer) RegisterRoute(route *rest.Route) {
+func (instance *restServer) registerRoute(route *rest.Route) {
 	instance.routes = append(instance.routes, route)
 }
 
@@ -162,4 +168,20 @@ func (instance *requestSizeLimitHandlerWrapper) ServeHTTP(w http.ResponseWriter,
 		r.Body = http.MaxBytesReader(w, r.Body, instance.maxRequestSize)
 	}
 	instance.handler.ServeHTTP(w, r)
+}
+
+func RegisterTypedRoute[T any](server RestServer, method string, path string) TypedRequestHandler[T] {
+	return &typedRqHandler[T]{rqHandlerBase{server: server, method: method, path: path}}
+}
+
+func BuildTypedRoute[T any](server RestServer) TypedRequestHandler[T] {
+	return &typedRqHandler[T]{rqHandlerBase{server: server}}
+}
+
+func RegisterRoute(server RestServer, method string, path string) RequestHandler {
+	return &rqHandler{rqHandlerBase{server: server, method: method, path: path}}
+}
+
+func BuildRoute(server RestServer) RequestHandler {
+	return &rqHandler{rqHandlerBase{server: server}}
 }
