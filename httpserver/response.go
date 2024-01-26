@@ -39,6 +39,12 @@ func (h *Response) BadRequest() *Response {
 	return h
 }
 
+func (h *Response) NotFound() *Response {
+	h.httpStatus = http.StatusNotFound
+	h.err = nil
+	return h
+}
+
 func (h *Response) BadRequestReason(reason ...string) *Response {
 	h.httpStatus = http.StatusBadRequest
 	h.content = fmt.Sprint(reason)
