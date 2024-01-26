@@ -8,13 +8,13 @@ import (
 type TypedRequestHandler[T any] interface {
 	Path(path string) TypedRequestHandler[T]
 	Method(method string) TypedRequestHandler[T]
-	Handler(handler func(request *RequestData, body T) Response)
+	Handler(handler func(request *RequestData, body T) (rs Response))
 }
 
 type RequestHandler interface {
 	Path(path string) RequestHandler
 	Method(method string) RequestHandler
-	Handler(handler func(request *RequestData) Response)
+	Handler(handler func(request *RequestData) (rs Response))
 	HandlerRaw(handler func(request *RequestData, responseWriter rest.ResponseWriter) error)
 }
 
