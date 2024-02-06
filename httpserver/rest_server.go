@@ -9,6 +9,7 @@ import (
 	"github.com/sedmess/go-ctx/u"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,13 +32,17 @@ func NewRestServer(name string, configPrefix string) RestServer {
 }
 
 type RestServer interface {
-	SetupAuthentication(authenticator Authenticator)
+	AddMiddleware(middleware Middleware) RestServer
 
 	registerRoute(route *rest.Route)
 	logger() logger.Logger
 }
 
+type Middleware func(chain rest.HandlerFunc, writer rest.ResponseWriter, request *rest.Request) error
+
 type restServer struct {
+	sync.Mutex
+
 	name   string
 	prefix string
 
@@ -45,7 +50,7 @@ type restServer struct {
 
 	server           *http.Server
 	api              *rest.Api
-	authenticator    Authenticator
+	middlewares      []Middleware
 	routes           []*rest.Route
 	requestSizeLimit int64
 }
@@ -103,8 +108,14 @@ func (instance *restServer) logger() logger.Logger {
 	return instance.l
 }
 
-func (instance *restServer) SetupAuthentication(authenticator Authenticator) {
-	instance.authenticator = authenticator
+func (instance *restServer) AddMiddleware(middleware Middleware) RestServer {
+	instance.Lock()
+
+	instance.middlewares = append(instance.middlewares, middleware)
+
+	instance.Unlock()
+
+	return instance
 }
 
 func (instance *restServer) registerRoute(route *rest.Route) {
@@ -112,25 +123,20 @@ func (instance *restServer) registerRoute(route *rest.Route) {
 }
 
 func (instance *restServer) AfterStart() {
-	if instance.authenticator != nil {
+	instance.Lock()
+	defer instance.Unlock()
+
+	for _, middleware := range instance.middlewares {
 		instance.api.Use(rest.MiddlewareSimple(func(handler rest.HandlerFunc) rest.HandlerFunc {
 			return func(writer rest.ResponseWriter, request *rest.Request) {
-				result := instance.authenticator.Authenticate(request)
-				switch result.Code {
-				case Authorized:
-					request.Env[credentialEnvKey] = result.Credential
-					handler(writer, request)
-				case Forbidden:
-					writer.WriteHeader(http.StatusForbidden)
-				case AuthenticationRequired:
-					writer.WriteHeader(http.StatusUnauthorized)
-				default:
-					instance.l.Error("unknown authenticator result:", result)
+				if err := middleware(handler, writer, request); err != nil {
+					instance.l.Error("on middleware:", err)
 					writer.WriteHeader(http.StatusInternalServerError)
 				}
 			}
 		}))
 	}
+
 	instance.api.SetApp(u.Must2(rest.MakeRouter(instance.routes...)))
 	instance.server.Handler = &requestSizeLimitHandlerWrapper{
 		handler:        instance.api.MakeHandler(),

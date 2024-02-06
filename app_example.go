@@ -22,7 +22,7 @@ type controllerSecurity struct {
 }
 
 func (s *controllerSecurity) Init() {
-	s.server.SetupAuthentication(httpserver.BearerTokenAuthenticator(func(path string, token string) httpserver.AuthenticationResultCode {
+	s.server.AddMiddleware(httpserver.BearerTokenAuthenticator(func(path string, token string) httpserver.AuthenticationResultCode {
 		if strings.HasPrefix(path, "/actuator") {
 			return httpserver.Authorized
 		}

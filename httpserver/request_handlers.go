@@ -8,20 +8,23 @@ import (
 type TypedRequestHandler[T any] interface {
 	Path(path string) TypedRequestHandler[T]
 	Method(method string) TypedRequestHandler[T]
+	Middleware(middleware Middleware) TypedRequestHandler[T]
 	Handler(handler func(request *RequestData, body T) (rs Response))
 }
 
 type RequestHandler interface {
 	Path(path string) RequestHandler
 	Method(method string) RequestHandler
+	Middleware(middleware Middleware) RequestHandler
 	Handler(handler func(request *RequestData) (rs Response))
 	HandlerRaw(handler func(request *RequestData, responseWriter rest.ResponseWriter) error)
 }
 
 type rqHandlerBase struct {
-	server RestServer
-	path   string
-	method string
+	server     RestServer
+	path       string
+	method     string
+	middleware Middleware
 }
 
 type typedRqHandler[T any] struct {
@@ -38,13 +41,18 @@ func (r *typedRqHandler[T]) Method(method string) TypedRequestHandler[T] {
 	return r
 }
 
+func (r *typedRqHandler[T]) Middleware(middleware Middleware) TypedRequestHandler[T] {
+	r.middleware = middleware
+	return r
+}
+
 func (r *typedRqHandler[T]) Handler(handler func(request *RequestData, body T) Response) {
 	logger := r.server.logger()
 	routeFunc := defineRouteFunc(r.method)
 	if routeFunc == nil {
 		logger.Fatal("unsupported http method:", r.method)
 	}
-	r.server.registerRoute(routeFunc(r.path, func(w rest.ResponseWriter, r *rest.Request) {
+	handlerFunc := func(w rest.ResponseWriter, r *rest.Request) {
 		var rq T
 		err := r.DecodeJsonPayload(&rq)
 		if err != nil {
@@ -72,7 +80,19 @@ func (r *typedRqHandler[T]) Handler(handler func(request *RequestData, body T) R
 				return
 			}
 		}
-	}))
+	}
+
+	if r.middleware != nil {
+		innerHandlerFunc := handlerFunc
+		handlerFunc = func(w rest.ResponseWriter, rq *rest.Request) {
+			if err := r.middleware(innerHandlerFunc, w, rq); err != nil {
+				logger.Error("on middleware:", err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}
+	}
+
+	r.server.registerRoute(routeFunc(r.path, handlerFunc))
 }
 
 type rqHandler struct {
@@ -86,6 +106,11 @@ func (r *rqHandler) Path(path string) RequestHandler {
 
 func (r *rqHandler) Method(method string) RequestHandler {
 	r.method = method
+	return r
+}
+
+func (r *rqHandler) Middleware(middleware Middleware) RequestHandler {
+	r.middleware = middleware
 	return r
 }
 
@@ -117,14 +142,26 @@ func (r *rqHandler) HandlerRaw(handler func(request *RequestData, responseWriter
 	if routeFunc == nil {
 		logger.Fatal("unsupported http method:", r.method)
 	}
-	r.server.registerRoute(routeFunc(r.path, func(w rest.ResponseWriter, r *rest.Request) {
+	handlerFunc := func(w rest.ResponseWriter, r *rest.Request) {
 		err := handler((*RequestData)(r), w)
 		if err != nil {
 			logger.Error("on handling request:", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-	}))
+	}
+
+	if r.middleware != nil {
+		innerHandlerFunc := handlerFunc
+		handlerFunc = func(w rest.ResponseWriter, rq *rest.Request) {
+			if err := r.middleware(innerHandlerFunc, w, rq); err != nil {
+				logger.Error("on middleware:", err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}
+	}
+
+	r.server.registerRoute(routeFunc(r.path, handlerFunc))
 }
 
 func defineRouteFunc(method string) func(path string, handler rest.HandlerFunc) *rest.Route {

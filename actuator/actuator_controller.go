@@ -23,7 +23,13 @@ func (instance *controller) Init(provider ctx.ServiceProvider) {
 	instance.l.Info("register on server", instance.serverServiceName)
 
 	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health").Handler(instance.health)
-	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/services").Handler(instance.services)
+	httpserver.BuildRoute(server).Method(http.MethodGet).Path("/actuator/services").Middleware(httpserver.BasicAuthenticator(func(_ string, username string, password string) httpserver.AuthenticationResultCode {
+		if username == "admin" && password == "admin" {
+			return httpserver.Authorized
+		} else {
+			return httpserver.Forbidden
+		}
+	})).Handler(instance.services)
 }
 
 func (instance *controller) Name() string {
