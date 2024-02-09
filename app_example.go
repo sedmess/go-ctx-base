@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/sedmess/go-ctx-base/actuator"
 	"github.com/sedmess/go-ctx-base/db"
 	"github.com/sedmess/go-ctx-base/httpserver"
@@ -154,6 +155,18 @@ func (s *messageService) removeMessagesBefore(time time.Time) error {
 	})
 }
 
+type fsController struct {
+	server httpserver.RestServer `inject:""`
+}
+
+func (c *fsController) Init() {
+	fileServerHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./")))
+	httpserver.BuildRoute(c.server).Method("GET").Path("/static/*").HandlerRaw(func(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
+		fileServerHandler.ServeHTTP(responseWriter.(http.ResponseWriter), request.Request)
+		return nil
+	})
+}
+
 var Packages = []ctx.ServicePackage{
 	httpserver.Default(),
 	db.Default(),
@@ -163,6 +176,7 @@ var Packages = []ctx.ServicePackage{
 		actuator.AddToDefaultHttpServer(),
 		&messageController{},
 		&messageService{},
+		&fsController{},
 	),
 }
 

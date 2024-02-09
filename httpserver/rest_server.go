@@ -18,7 +18,6 @@ const serverRequestSizeLimitKey = "HTTP_MAX_REQUEST_SIZE"
 const serverMaxHeaderSizeKey = "HTTP_MAX_HEADER_SIZE"
 const serverReadTimeoutKey = "HTTP_READ_TIMEOUT"
 const serverWriteTimeoutKey = "HTTP_WRITE_TIMEOUT"
-const serverAuthBearerTokensKey = "HTTP_AUTH_BEARER_TOKENS"
 
 const credentialEnvKey = "credential"
 
@@ -75,29 +74,6 @@ func (instance *restServer) Init() {
 		&rest.RecorderMiddleware{},
 		&rest.RecoverMiddleware{},
 	)
-
-	authTokens := instance.getEnv(serverAuthBearerTokensKey).AsStringArrayDefault(nil)
-	if authTokens != nil {
-		authTokenSet := make(map[string]bool)
-		for _, token := range authTokens {
-			authTokenSet["Bearer "+token] = true
-		}
-		instance.l.Info("use Bearer tokens:", len(authTokenSet))
-		instance.api.Use(
-			rest.MiddlewareSimple(func(handler rest.HandlerFunc) rest.HandlerFunc {
-				return func(writer rest.ResponseWriter, request *rest.Request) {
-					authHeader := request.Header.Get("Authorization")
-					if _, found := authTokenSet[authHeader]; found {
-						handler(writer, request)
-					} else if authHeader == "" {
-						writer.WriteHeader(http.StatusUnauthorized)
-					} else {
-						writer.WriteHeader(http.StatusForbidden)
-					}
-				}
-			}),
-		)
-	}
 }
 
 func (instance *restServer) Name() string {
@@ -119,7 +95,11 @@ func (instance *restServer) AddMiddleware(middleware Middleware) RestServer {
 }
 
 func (instance *restServer) registerRoute(route *rest.Route) {
+	instance.Lock()
+
 	instance.routes = append(instance.routes, route)
+
+	instance.Unlock()
 }
 
 func (instance *restServer) AfterStart() {
