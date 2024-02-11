@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"github.com/sedmess/go-ctx-base/utils/channels"
+	"github.com/sedmess/go-ctx/logger"
 	"gorm.io/gorm"
 )
 
@@ -53,6 +55,31 @@ func (p *paginator) Limit() int {
 
 func (p *paginator) Offset() int {
 	return p.offset
+}
+
+func SessionStream[T any](connection Connection, fetchSize int, selectFn func(session *gorm.DB) *gorm.DB) channels.StreamingChan[T] {
+	return SessionContextStream[T](context.Background(), connection, fetchSize, selectFn)
+}
+
+func SessionContextStream[T any](ctx context.Context, connection Connection, fetchSize int, selectFn func(session *gorm.DB) *gorm.DB) channels.StreamingChan[T] {
+	paginator := NewPaginator(fetchSize)
+	return channels.CreateChannelBuffered[T](fetchSize, func(sink func(data []T, context context.Context) bool) error {
+		return connection.SessionContext(ctx, func(session *Session) error {
+			for paginator.HasNext() {
+				var list []T
+				result := selectFn(session.Scopes(paginator.Scope())).Find(&list)
+				if result.Error != nil {
+					return result.Error
+				}
+				paginator.OffsetResult(result)
+				if !sink(list, session) {
+					logger.Error("DB", "breaking TX by timeout")
+					return errors.New("transaction timeout expired")
+				}
+			}
+			return nil
+		})
+	})
 }
 
 func SessionReturning[T any](connection Connection, sessionFn func(session *Session) (T, error)) (T, error) {

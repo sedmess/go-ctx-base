@@ -7,9 +7,11 @@ import (
 	"github.com/sedmess/go-ctx-base/httpserver"
 	_ "github.com/sedmess/go-ctx-base/logconfig"
 	"github.com/sedmess/go-ctx-base/scheduler"
+	"github.com/sedmess/go-ctx-base/utils/channels"
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/logger"
 	"github.com/sedmess/go-ctx/u"
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
@@ -89,7 +91,7 @@ func (c *messageController) getMessages(request *httpserver.RequestData) (rs htt
 		return
 	}
 
-	if messages, err := c.messageService.GetMessages(to, since); err != nil {
+	if messages, err := c.messageService.GetMessages(to, since).CollectToSlice(); err != nil {
 		rs.Error(err)
 		return
 	} else {
@@ -132,11 +134,9 @@ func (s *messageService) SaveMessage(from string, to string, text string) error 
 	})
 }
 
-func (s *messageService) GetMessages(to string, since int64) ([]Message, error) {
-	return db.SessionReturning(s.db, func(session *db.Session) ([]Message, error) {
-		var messages []Message
-		result := session.Where("receiver = ?", to).Where("id > ?", since).Order("id asc").Find(&messages)
-		return messages, result.Error
+func (s *messageService) GetMessages(to string, since int64) channels.StreamingChan[Message] {
+	return db.SessionStream[Message](s.db, 2, func(session *gorm.DB) *gorm.DB {
+		return session.Where("receiver = ?", to).Where("id > ?", since).Order("id asc")
 	})
 }
 
