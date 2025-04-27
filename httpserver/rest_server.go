@@ -28,7 +28,12 @@ var serverReadTimeoutDefault = 60 * time.Second
 var serverWriteTimeoutDefault = 60 * time.Second
 
 func NewRestServer(name string, configPrefix string) RestServer {
-	return &restServer{name: name, prefix: strings.ToUpper(configPrefix)}
+	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: false}
+}
+
+func NewRestServerSilent(name string, configPrefix string) RestServer {
+	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: true}
+
 }
 
 type RestServer interface {
@@ -45,6 +50,7 @@ type restServer struct {
 
 	name   string
 	prefix string
+	silent bool
 
 	l logger.Logger `ctx:""`
 
@@ -65,24 +71,40 @@ func (instance *restServer) Init() {
 	instance.requestSizeLimit = int64(ctx.GetEnv(serverRequestSizeLimitKey).AsIntDefault(serverRequestSizeLimitDefault))
 
 	instance.api = rest.NewApi()
+
 	logFormat := "[" + instance.name + "] %h %l %u \"%r\" %s %b"
-	debugLoggerAdaper := log.New(&logAdapter{loggingFn: func(msg string) {
+
+	debugLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
 		instance.l.Debug(msg)
 	}}, "", 0)
 	errorLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
 		instance.l.Error(msg)
 	}}, "", 0)
+
+	var middlewares []rest.Middleware
+	if instance.silent {
+		middlewares = []rest.Middleware{
+			&rest.RecoverMiddleware{
+				Logger: errorLoggerAdapter,
+			},
+		}
+	} else {
+		middlewares = []rest.Middleware{
+			&rest.AccessLogApacheMiddleware{
+				Logger: debugLoggerAdapter,
+				Format: rest.AccessLogFormat(logFormat),
+			},
+			createPrometheusMiddleware(instance.name),
+			&rest.TimerMiddleware{},
+			&rest.RecorderMiddleware{},
+			&rest.RecoverMiddleware{
+				Logger: errorLoggerAdapter,
+			},
+		}
+	}
+
 	instance.api.Use(
-		&rest.AccessLogApacheMiddleware{
-			Logger: debugLoggerAdaper,
-			Format: rest.AccessLogFormat(logFormat),
-		},
-		createPrometheusMiddleware(instance.name),
-		&rest.TimerMiddleware{},
-		&rest.RecorderMiddleware{},
-		&rest.RecoverMiddleware{
-			Logger: errorLoggerAdapter,
-		},
+		middlewares...,
 	)
 }
 

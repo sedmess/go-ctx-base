@@ -19,7 +19,7 @@ func AddToHttpServer(serverServiceName string) any {
 
 var independentServerServices = sync.OnceValue(func() ctx.ServicePackage {
 	return ctx.PackageOf(
-		httpserver.NewRestServer(defaultServerName, "ACTUATOR"),
+		httpserver.NewRestServerSilent(defaultServerName, "ACTUATOR"),
 		&controller{serverServiceName: defaultServerName},
 	)
 })
