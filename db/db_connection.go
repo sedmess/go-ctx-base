@@ -8,7 +8,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/ctx/health"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -71,7 +71,7 @@ type connection struct {
 }
 
 func (instance *connection) Init() {
-	instance.logger = logger.New(instance)
+	instance.logger = logger.New(instance.name)
 
 	var dbProvider gorm.Dialector
 
@@ -110,7 +110,9 @@ func (instance *connection) Init() {
 			&gorm.Config{
 				PrepareStmt:    true,
 				TranslateError: true,
-				Logger: glogger.New(logger.GetLogger(logger.DEBUG), glogger.Config{
+				Logger: glogger.New(&logAdapter{loggingFn: func(msg string) {
+					instance.logger.Debug(msg)
+				}}, glogger.Config{
 					SlowThreshold:             0,
 					Colorful:                  false,
 					IgnoreRecordNotFoundError: true,
@@ -204,4 +206,12 @@ func (instance *connection) presentAll(values ...*ctx.EnvValue) bool {
 		}
 	}
 	return true
+}
+
+type logAdapter struct {
+	loggingFn func(msg string)
+}
+
+func (a *logAdapter) Printf(format string, v ...interface{}) {
+	a.loggingFn(fmt.Sprintf(format, v...))
 }

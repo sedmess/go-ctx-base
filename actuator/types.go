@@ -1,8 +1,9 @@
 package actuator
 
 type ServiceDescription struct {
-	Name             string   `json:"name"`
-	Type             string   `json:"type"`
-	IsLifecycleAware bool     `json:"isLifecycleAware"`
-	Dependencies     []string `json:"dependencies"`
+	Name         string   `json:"name"`
+	Type         string   `json:"type"`
+	IsStartAware bool     `json:"isStartAware"`
+	IsStopAware  bool     `json:"isStopAware"`
+	Dependencies []string `json:"dependencies"`
 }

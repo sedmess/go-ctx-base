@@ -7,7 +7,7 @@ import (
 	"github.com/sedmess/go-ctx-base/db"
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/ctx/health"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"strings"
 	"sync"
 )
@@ -22,7 +22,7 @@ const (
 var alreadyLockedErr = errors.New("resource has already locked")
 
 type Locker struct {
-	l logger.Logger `logger:""`
+	l logger.Logger `ctx:""`
 
 	db db.Connection
 	mu sync.Mutex

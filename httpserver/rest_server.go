@@ -5,8 +5,9 @@ import (
 	"errors"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/sedmess/go-ctx/ctx"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -45,7 +46,7 @@ type restServer struct {
 	name   string
 	prefix string
 
-	l logger.Logger `logger:""`
+	l logger.Logger `ctx:""`
 
 	server           *http.Server
 	api              *rest.Api
@@ -65,14 +66,23 @@ func (instance *restServer) Init() {
 
 	instance.api = rest.NewApi()
 	logFormat := "[" + instance.name + "] %h %l %u \"%r\" %s %b"
+	debugLoggerAdaper := log.New(&logAdapter{loggingFn: func(msg string) {
+		instance.l.Debug(msg)
+	}}, "", 0)
+	errorLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
+		instance.l.Error(msg)
+	}}, "", 0)
 	instance.api.Use(
 		&rest.AccessLogApacheMiddleware{
-			Logger: logger.GetLogger(logger.DEBUG),
+			Logger: debugLoggerAdaper,
 			Format: rest.AccessLogFormat(logFormat),
 		},
+		createPrometheusMiddleware(instance.name),
 		&rest.TimerMiddleware{},
 		&rest.RecorderMiddleware{},
-		&rest.RecoverMiddleware{},
+		&rest.RecoverMiddleware{
+			Logger: errorLoggerAdapter,
+		},
 	)
 }
 
@@ -170,4 +180,13 @@ func RegisterRoute(server RestServer, method string, path string) RequestHandler
 
 func BuildRoute(server RestServer) RequestHandler {
 	return &rqHandler{rqHandlerBase{server: server}}
+}
+
+type logAdapter struct {
+	loggingFn func(msg string)
+}
+
+func (a *logAdapter) Write(p []byte) (n int, err error) {
+	a.loggingFn(string(p))
+	return len(p), nil
 }

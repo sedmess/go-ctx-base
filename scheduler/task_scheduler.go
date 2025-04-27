@@ -2,15 +2,15 @@ package scheduler
 
 import (
 	"github.com/go-co-op/gocron"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
 	"time"
 )
 
 type Scheduler struct {
-	l        logger.Logger `logger:""`
-	location string        `env:"TZ" envDef:"UTC"`
-	locker   *Locker       `inject:""`
+	l        logger.Logger `ctx:""`
+	location string        `env:"TZ=UTC"`
+	locker   *Locker       `ctx:""`
 
 	s *gocron.Scheduler
 }

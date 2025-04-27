@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/sedmess/go-ctx-base/utils/channels"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"gorm.io/gorm"
 )
 

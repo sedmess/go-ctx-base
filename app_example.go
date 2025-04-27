@@ -2,25 +2,30 @@ package main
 
 import (
 	"github.com/ant0ine/go-json-rest/rest"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sedmess/go-ctx-base/actuator"
 	"github.com/sedmess/go-ctx-base/db"
 	"github.com/sedmess/go-ctx-base/httpserver"
+	"github.com/sedmess/go-ctx-base/logconfig"
 	_ "github.com/sedmess/go-ctx-base/logconfig"
 	"github.com/sedmess/go-ctx-base/scheduler"
 	"github.com/sedmess/go-ctx-base/utils/channels"
 	"github.com/sedmess/go-ctx/ctx"
-	"github.com/sedmess/go-ctx/logger"
+	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
 	"gorm.io/gorm"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type controllerSecurity struct {
-	l      logger.Logger         `logger:""`
-	server httpserver.RestServer `inject:""`
+	l      logger.Logger         `ctx:""`
+	server httpserver.RestServer `ctx:""`
 	tokens map[string]bool       `env:"HTTP_AUTH_TOKENS"`
 }
 
@@ -49,15 +54,21 @@ type Message struct {
 }
 
 type messageController struct {
-	l      logger.Logger         `logger:""`
-	server httpserver.RestServer `inject:""`
+	l      logger.Logger         `ctx:""`
+	server httpserver.RestServer `ctx:""`
 
-	messageService *messageService `inject:""`
+	messageService *messageService `ctx:""`
+
+	newMessagesCounter prometheus.Counter
 }
 
 func (c *messageController) Init() {
 	httpserver.BuildTypedRoute[string](c.server).Method(http.MethodPost).Path("/messages").Handler(c.newMessage)
 	httpserver.BuildRoute(c.server).Method(http.MethodGet).Path("/messages").Handler(c.getMessages)
+
+	c.newMessagesCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "new_messages_total",
+	})
 }
 
 func (c *messageController) newMessage(request *httpserver.RequestData, body string) (rs httpserver.Response) {
@@ -72,6 +83,7 @@ func (c *messageController) newMessage(request *httpserver.RequestData, body str
 		rs.Error(err)
 		return
 	} else {
+		c.newMessagesCounter.Inc()
 		rs.Status(http.StatusCreated)
 		return
 	}
@@ -101,12 +113,12 @@ func (c *messageController) getMessages(request *httpserver.RequestData) (rs htt
 }
 
 type messageService struct {
-	l  logger.Logger `logger:""`
-	db db.Connection `inject:""`
+	l  logger.Logger `ctx:""`
+	db db.Connection `ctx:""`
 
-	messageTTL         time.Duration        `env:"MESSAGE_TTL" envDef:"24h"`
-	messageCleanupCron string               `env:"MESSAGE_CLEANUP_CRON" envDef:"0 0 * * * *"`
-	scheduler          *scheduler.Scheduler `inject:""`
+	messageTTL         time.Duration        `env:"MESSAGE_TTL=24h"`
+	messageCleanupCron string               `env:"MESSAGE_CLEANUP_CRON=0 0 * * * *"`
+	scheduler          *scheduler.Scheduler `ctx:""`
 }
 
 func (s *messageService) Init() {
@@ -156,7 +168,7 @@ func (s *messageService) removeMessagesBefore(time time.Time) error {
 }
 
 type fsController struct {
-	server httpserver.RestServer `inject:""`
+	server httpserver.RestServer `ctx:""`
 }
 
 func (c *fsController) Init() {
@@ -181,5 +193,9 @@ var Packages = []ctx.ServicePackage{
 }
 
 func main() {
+	logconfig.InitWithExtraHandlers(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level:     slog.LevelDebug,
+		AddSource: true,
+	}))
 	ctx.CreateContextualizedApplication(Packages...).Join()
 }
