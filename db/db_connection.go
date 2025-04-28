@@ -13,6 +13,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	glogger "gorm.io/gorm/logger"
+	"gorm.io/plugin/prometheus"
 	"strings"
 	"time"
 )
@@ -135,6 +136,11 @@ func (instance *connection) Init() {
 	if dbConnMaxLifetime.IsPresent() {
 		sqlDb.SetConnMaxLifetime(dbConnMaxLifetime.AsDuration())
 	}
+
+	_ = instance.db.Use(prometheus.New(prometheus.Config{
+		DBName:      instance.name,
+		StartServer: false,
+	}))
 }
 
 func (instance *connection) AutoMigrate(models ...any) {
