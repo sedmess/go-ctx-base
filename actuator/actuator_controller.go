@@ -1,6 +1,7 @@
 package actuator
 
 import (
+	"fmt"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sedmess/go-ctx-base/httpserver"
@@ -29,6 +30,7 @@ func (instance *controller) Init(provider ctx.ServiceProvider) {
 	instance.promHandler = promhttp.Handler()
 
 	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health").Handler(instance.health)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health/plain").HandlerRaw(instance.healthPlainText)
 	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/services").Handler(instance.services)
 	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/metrics").HandlerRaw(instance.metrics)
 }
@@ -40,6 +42,15 @@ func (instance *controller) Name() string {
 func (instance *controller) health(*httpserver.RequestData) (rs httpserver.Response) {
 	rs.Ok().Content(instance.appContext.Health().Aggregate())
 	return
+}
+
+func (instance *controller) healthPlainText(_ *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
+	statusString := fmt.Sprint(instance.appContext.Health().Aggregate().Status)
+	w := responseWriter.(http.ResponseWriter)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte(statusString))
+	return err
 }
 
 func (instance *controller) services(*httpserver.RequestData) (rs httpserver.Response) {

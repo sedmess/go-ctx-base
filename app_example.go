@@ -12,6 +12,7 @@ import (
 	"github.com/sedmess/go-ctx-base/scheduler"
 	"github.com/sedmess/go-ctx-base/utils/channels"
 	"github.com/sedmess/go-ctx/ctx"
+	"github.com/sedmess/go-ctx/ctx/appinfo"
 	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
 	"gorm.io/gorm"
@@ -193,6 +194,7 @@ var Packages = []ctx.ServicePackage{
 }
 
 func main() {
+	appinfo.Name = "app_example"
 	logconfig.InitWithExtraHandlers(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level:     slog.LevelDebug,
 		AddSource: true,
