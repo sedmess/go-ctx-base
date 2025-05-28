@@ -29,7 +29,7 @@ type Locker struct {
 	lm map[string]any
 }
 
-func (instance *Locker) Init() {
+func (instance *Locker) Init() error {
 	provider := strings.ToUpper(ctx.GetEnv(schedulerLockProviderKey).AsStringDefault(providerLocal))
 	switch provider {
 	case providerLocal:
@@ -37,11 +37,14 @@ func (instance *Locker) Init() {
 		instance.lm = make(map[string]any)
 	case providerPostgres:
 		instance.db = db.NewConnection("scheduler", "SCHEDULER", false, true)
-		instance.db.Init()
+		if err := instance.db.Init(); err != nil {
+			return err
+		}
 	default:
-		instance.l.Fatal("unknown", schedulerLockProviderKey, ":", provider)
+		return errors.New("unknown " + schedulerLockProviderKey + ": " + provider)
 	}
 	instance.l.Info("scheduler works on", provider, "locker")
+	return nil
 }
 
 func (instance *Locker) Health() health.ServiceHealth {

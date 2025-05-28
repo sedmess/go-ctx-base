@@ -52,7 +52,7 @@ func NewConnection(name string, configPrefix string, isDefault bool, isCritical 
 }
 
 type Connection interface {
-	Init()
+	Init() error
 	AutoMigrate(models ...any)
 	Session(session func(session *Session) error) error
 	SessionContext(context context.Context, session func(session *Session) error) error
@@ -71,7 +71,7 @@ type connection struct {
 	db *gorm.DB
 }
 
-func (instance *connection) Init() {
+func (instance *connection) Init() error {
 	instance.logger = logger.New(instance.name)
 
 	var dbProvider gorm.Dialector
@@ -102,7 +102,7 @@ func (instance *connection) Init() {
 		instance.logger.Info("use SQLite DB")
 		dbProvider = sqlite.Open(sqlitePath.AsString())
 	} else {
-		instance.logger.Fatal("undefined DB connection")
+		return errors.New("undefined DB connection")
 	}
 
 	instance.db = u.Must2(
@@ -141,6 +141,8 @@ func (instance *connection) Init() {
 		DBName:      instance.name,
 		StartServer: false,
 	}))
+
+	return nil
 }
 
 func (instance *connection) AutoMigrate(models ...any) {
