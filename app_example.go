@@ -24,12 +24,16 @@ import (
 	"time"
 )
 
+// controllerSecurity handles authentication middleware configuration for the HTTP server.
+// It validates bearer tokens for non-actuator endpoints using environment-configured tokens.
 type controllerSecurity struct {
 	l      logger.Logger         `ctx:""`
 	server httpserver.RestServer `ctx:""`
 	tokens map[string]bool       `env:"HTTP_AUTH_TOKENS"`
 }
 
+// Init registers the bearer token authentication middleware with the HTTP server.
+// Skips authentication for actuator endpoints and validates configured tokens for other routes.
 func (s *controllerSecurity) Init() {
 	s.server.AddMiddleware(httpserver.BearerTokenAuthenticator(func(path string, token string) httpserver.AuthenticationResultCode {
 		if strings.HasPrefix(path, "/actuator") {
@@ -46,6 +50,8 @@ func (s *controllerSecurity) Init() {
 	}))
 }
 
+// Message represents a communication entity stored in the database.
+// Contains sender/receiver information and message content with timestamps.
 type Message struct {
 	Id         int64     `gorm:"primaryKey,autoIncrement"`
 	RecCreated time.Time `gorm:"autoCreateTime"`
@@ -54,6 +60,8 @@ type Message struct {
 	Text       string
 }
 
+// messageController handles HTTP endpoints for message management.
+// Exposes REST API endpoints for creating and retrieving messages.
 type messageController struct {
 	l      logger.Logger         `ctx:""`
 	server httpserver.RestServer `ctx:""`
@@ -63,6 +71,8 @@ type messageController struct {
 	newMessagesCounter prometheus.Counter
 }
 
+// Init registers the message controller's HTTP routes and initializes metrics collection.
+// Sets up POST /messages and GET /messages endpoints.
 func (c *messageController) Init() {
 	httpserver.BuildTypedRoute[string](c.server).Method(http.MethodPost).Path("/messages").Handler(c.newMessage)
 	httpserver.BuildRoute(c.server).Method(http.MethodGet).Path("/messages").Handler(c.getMessages)
@@ -72,6 +82,9 @@ func (c *messageController) Init() {
 	})
 }
 
+// newMessage handles message creation requests. Validates required from/to parameters,
+// stores messages via service layer, and tracks metrics for new messages.
+// Returns 400 for invalid requests, 500 on storage errors, 201 on success.
 func (c *messageController) newMessage(request *httpserver.RequestData, body string) (rs httpserver.Response) {
 	from := request.Query().Get("from")
 	to := request.Query().Get("to")
@@ -90,6 +103,8 @@ func (c *messageController) newMessage(request *httpserver.RequestData, body str
 	}
 }
 
+// getMessages retrieves messages for a specific receiver. Requires 'to' and 'since' parameters.
+// Returns messages as a JSON array or appropriate error status codes.
 func (c *messageController) getMessages(request *httpserver.RequestData) (rs httpserver.Response) {
 	to := request.Query().Get("to")
 	sinceStr := request.Query().Get("since")
@@ -113,6 +128,8 @@ func (c *messageController) getMessages(request *httpserver.RequestData) (rs htt
 	}
 }
 
+// messageService provides business logic for message storage and retrieval.
+// Handles database operations and scheduled cleanup of old messages.
 type messageService struct {
 	l  logger.Logger `ctx:""`
 	db db.Connection `ctx:""`
@@ -122,6 +139,8 @@ type messageService struct {
 	scheduler          *scheduler.Scheduler `ctx:""`
 }
 
+// Init initializes the message service by creating database tables,
+// and scheduling periodic message cleanup tasks.
 func (s *messageService) Init() {
 	s.db.AutoMigrate(&Message{})
 
@@ -132,6 +151,8 @@ func (s *messageService) Init() {
 	}))
 }
 
+// SaveMessage persists a new message to the database within a transaction.
+// Validates input parameters before storage.
 func (s *messageService) SaveMessage(from string, to string, text string) error {
 	return s.db.Session(func(session *db.Session) error {
 		return session.Tx(func(session *db.Session) error {
@@ -147,12 +168,16 @@ func (s *messageService) SaveMessage(from string, to string, text string) error 
 	})
 }
 
+// GetMessages retrieves messages for a recipient using a streaming channel.
+// Uses paginated database access with a fetch size of 2 for efficient memory usage.
 func (s *messageService) GetMessages(to string, since int64) channels.StreamingChan[Message] {
 	return db.SessionStream[Message](s.db, 2, func(session *gorm.DB) *gorm.DB {
 		return session.Where("receiver = ?", to).Where("id > ?", since).Order("id asc")
 	})
 }
 
+// removeMessagesBefore deletes messages older than specified time.
+// Used by the scheduled cleanup task to maintain database size.
 func (s *messageService) removeMessagesBefore(time time.Time) error {
 	return s.db.Session(func(session *db.Session) error {
 		return session.Tx(func(session *db.Session) error {
@@ -168,10 +193,14 @@ func (s *messageService) removeMessagesBefore(time time.Time) error {
 	})
 }
 
+// fsController serves static files from the server's current directory.
+// Exposes GET /static/* endpoint for file serving.
 type fsController struct {
 	server httpserver.RestServer `ctx:""`
 }
 
+// Init registers the static file server route with the HTTP server.
+// Serves files from the application's working directory under /static/ path.
 func (c *fsController) Init() {
 	fileServerHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./")))
 	httpserver.BuildRoute(c.server).Method("GET").Path("/static/*").HandlerRaw(func(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
@@ -180,6 +209,8 @@ func (c *fsController) Init() {
 	})
 }
 
+// Packages defines the application's service components and dependencies.
+// Aggregates HTTP server, database, scheduler, and custom controllers.
 var Packages = []ctx.ServicePackage{
 	httpserver.Default(),
 	db.Default(),
@@ -193,6 +224,8 @@ var Packages = []ctx.ServicePackage{
 	),
 }
 
+// main is the application entry point that initializes logging and starts the contextualized application.
+// Configures JSON logging with debug level and source location tracking.
 func main() {
 	appinfo.Name = "app_example"
 	logconfig.InitWithExtraHandlers(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
