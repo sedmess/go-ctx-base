@@ -29,6 +29,10 @@ func (o Optional[T]) String() string {
 	}
 }
 
+func (o Optional[T]) HasValue() bool {
+	return o.hasValue
+}
+
 func IfError[T any](value T, err error) Optional[T] {
 	if err != nil {
 		return Optional[T]{hasValue: false}
