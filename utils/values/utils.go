@@ -1,5 +1,7 @@
 package values
 
+import "fmt"
+
 func Copy[T any](value T) *T {
 	var cp T
 	cp = value
@@ -17,6 +19,14 @@ func (o Optional[T]) OrDefault(defValue T) T {
 	} else {
 	}
 	return defValue
+}
+
+func (o Optional[T]) String() string {
+	if o.hasValue {
+		return fmt.Sprint(o.value)
+	} else {
+		return "<empty>"
+	}
 }
 
 func IfError[T any](value T, err error) Optional[T] {
