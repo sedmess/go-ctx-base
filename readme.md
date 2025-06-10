@@ -2,6 +2,9 @@
 
 A modular framework for building contextualized Go applications with dependency injection, service management, and common infrastructure components.
 
+## DeepWiki Documentation
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sedmess/go-ctx-base)
+
 ## Key Components
 
 ### Database Layer (`db/`)
