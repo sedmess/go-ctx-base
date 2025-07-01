@@ -16,8 +16,8 @@ func TestMain(m *testing.M) {
 }
 
 func Test_MessageController(t *testing.T) {
-	messageController := ctx.GetTypedService[*messageController]()
-	if messageController == nil {
+	messageController, ok := ctx.GetTypedService[*messageController]()
+	if !ok || messageController == nil {
 		t.FailNow()
 	}
 }
