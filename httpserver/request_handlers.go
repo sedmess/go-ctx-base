@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"github.com/ant0ine/go-json-rest/rest"
+	"golang.org/x/exp/maps"
 	"net/http"
 )
 
@@ -23,8 +24,15 @@ type RequestHandler interface {
 type rqHandlerBase struct {
 	server     RestServer
 	path       string
-	method     string
+	methods    map[string]bool
 	middleware Middleware
+}
+
+func (r *rqHandlerBase) addMethod(method string) {
+	if r.methods == nil {
+		r.methods = map[string]bool{}
+	}
+	r.methods[method] = true
 }
 
 type typedRqHandler[T any] struct {
@@ -37,7 +45,7 @@ func (r *typedRqHandler[T]) Path(path string) TypedRequestHandler[T] {
 }
 
 func (r *typedRqHandler[T]) Method(method string) TypedRequestHandler[T] {
-	r.method = method
+	r.addMethod(method)
 	return r
 }
 
@@ -48,9 +56,9 @@ func (r *typedRqHandler[T]) Middleware(middleware Middleware) TypedRequestHandle
 
 func (r *typedRqHandler[T]) Handler(handler func(request *RequestData, body T) Response) {
 	logger := r.server.logger()
-	routeFunc := defineRouteFunc(r.method)
-	if routeFunc == nil {
-		logger.Fatal("unsupported http method:", r.method)
+	routes := defineRoutes(r.methods)
+	if len(routes) == 0 {
+		logger.Fatal("unsupported http method set:", maps.Keys(r.methods))
 	}
 	handlerFunc := func(w rest.ResponseWriter, r *rest.Request) {
 		var rq T
@@ -92,7 +100,9 @@ func (r *typedRqHandler[T]) Handler(handler func(request *RequestData, body T) R
 		}
 	}
 
-	r.server.registerRoute(routeFunc(r.path, handlerFunc))
+	for _, route := range routes {
+		r.server.registerRoute(route(r.path, handlerFunc))
+	}
 }
 
 type rqHandler struct {
@@ -105,7 +115,7 @@ func (r *rqHandler) Path(path string) RequestHandler {
 }
 
 func (r *rqHandler) Method(method string) RequestHandler {
-	r.method = method
+	r.addMethod(method)
 	return r
 }
 
@@ -138,9 +148,9 @@ func (r *rqHandler) Handler(handler func(request *RequestData) Response) {
 
 func (r *rqHandler) HandlerRaw(handler func(request *RequestData, responseWriter rest.ResponseWriter) error) {
 	logger := r.server.logger()
-	routeFunc := defineRouteFunc(r.method)
-	if routeFunc == nil {
-		logger.Fatal("unsupported http method:", r.method)
+	routes := defineRoutes(r.methods)
+	if len(routes) == 0 {
+		logger.Fatal("unsupported http method set:", maps.Keys(r.methods))
 	}
 	handlerFunc := func(w rest.ResponseWriter, r *rest.Request) {
 		err := handler((*RequestData)(r), w)
@@ -161,26 +171,36 @@ func (r *rqHandler) HandlerRaw(handler func(request *RequestData, responseWriter
 		}
 	}
 
-	r.server.registerRoute(routeFunc(r.path, handlerFunc))
+	for _, route := range routes {
+		r.server.registerRoute(route(r.path, handlerFunc))
+	}
 }
 
-func defineRouteFunc(method string) func(path string, handler rest.HandlerFunc) *rest.Route {
-	switch method {
-	case http.MethodGet:
-		return rest.Get
-	case http.MethodHead:
-		return rest.Head
-	case http.MethodPost:
-		return rest.Post
-	case http.MethodPut:
-		return rest.Put
-	case http.MethodPatch:
-		return rest.Patch
-	case http.MethodDelete:
-		return rest.Delete
-	case http.MethodOptions:
-		return rest.Options
-	default:
-		return nil
+func defineRoutes(methods map[string]bool) (res []func(path string, handler rest.HandlerFunc) *rest.Route) {
+	if len(methods) == 0 {
+		res = []func(path string, handler rest.HandlerFunc) *rest.Route{rest.Get, rest.Post}
+		return
 	}
+	for method, _ := range methods {
+		switch method {
+		case http.MethodGet:
+			res = append(res, rest.Get)
+		case http.MethodHead:
+			res = append(res, rest.Head)
+		case http.MethodPost:
+			res = append(res, rest.Post)
+		case http.MethodPut:
+			res = append(res, rest.Put)
+		case http.MethodPatch:
+			res = append(res, rest.Patch)
+		case http.MethodDelete:
+			res = append(res, rest.Delete)
+		case http.MethodOptions:
+			res = append(res, rest.Options)
+		default:
+			res = nil
+			return
+		}
+	}
+	return
 }

@@ -189,7 +189,7 @@ func (instance *requestSizeLimitHandlerWrapper) ServeHTTP(w http.ResponseWriter,
 }
 
 func RegisterTypedRoute[T any](server RestServer, method string, path string) TypedRequestHandler[T] {
-	return &typedRqHandler[T]{rqHandlerBase{server: server, method: method, path: path}}
+	return &typedRqHandler[T]{rqHandlerBase{server: server, methods: map[string]bool{method: true}, path: path}}
 }
 
 func BuildTypedRoute[T any](server RestServer) TypedRequestHandler[T] {
@@ -197,7 +197,7 @@ func BuildTypedRoute[T any](server RestServer) TypedRequestHandler[T] {
 }
 
 func RegisterRoute(server RestServer, method string, path string) RequestHandler {
-	return &rqHandler{rqHandlerBase{server: server, method: method, path: path}}
+	return &rqHandler{rqHandlerBase{server: server, methods: map[string]bool{method: true}, path: path}}
 }
 
 func BuildRoute(server RestServer) RequestHandler {

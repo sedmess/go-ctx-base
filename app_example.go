@@ -14,7 +14,6 @@ import (
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/ctx/appinfo"
 	"github.com/sedmess/go-ctx/ctx/logger"
-	"github.com/sedmess/go-ctx/u"
 	"gorm.io/gorm"
 	"log/slog"
 	"net/http"
@@ -141,14 +140,18 @@ type messageService struct {
 
 // Init initializes the message service by creating database tables,
 // and scheduling periodic message cleanup tasks.
-func (s *messageService) Init() {
+func (s *messageService) Init() error {
 	s.db.AutoMigrate(&Message{})
 
-	u.Must2(s.scheduler.ScheduleTaskCron(s.messageCleanupCron, "messages-cleanup", func() {
+	if _, err := s.scheduler.ScheduleTaskCron(s.messageCleanupCron, "messages-cleanup", func() {
 		if err := s.removeMessagesBefore(time.Now().Add(-s.messageTTL)); err != nil {
 			s.l.Error("cleanup task failed:", err)
 		}
-	}))
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SaveMessage persists a new message to the database within a transaction.
