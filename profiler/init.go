@@ -1,4 +1,4 @@
-package actuator
+package profiler
 
 import (
 	"github.com/sedmess/go-ctx-base/httpserver"
@@ -7,23 +7,27 @@ import (
 	"sync"
 )
 
-const defaultServerName = "base.actuator-http-server"
+const defaultServerName = "base.profiler-http-server"
 
 func AddToDefaultHttpServer() any {
-	return &controller{serverServiceName: u.GetInterfaceName[httpserver.RestServer]()}
+	return &Controller{serverServiceName: u.GetInterfaceName[httpserver.RestServer]()}
 }
 
 func AddToHttpServer(serverServiceName string) any {
-	return &controller{serverServiceName: serverServiceName}
+	return &Controller{serverServiceName: serverServiceName}
 }
 
 var independentServerServices = sync.OnceValue(func() ctx.ServicePackage {
 	return ctx.PackageOf(
-		httpserver.NewRestServerSilent(defaultServerName, "ACTUATOR", 8089),
-		&controller{serverServiceName: defaultServerName},
+		httpserver.NewRestServerSilent(defaultServerName, "PROFILER", 8099),
+		&Controller{serverServiceName: defaultServerName},
 	)
 })
 
 func RunAsIndependentServer() ctx.ServicePackage {
 	return independentServerServices()
+}
+
+func Default() ctx.ServicePackage {
+	return ctx.PackageOf(&Controller{})
 }

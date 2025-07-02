@@ -8,7 +8,7 @@ import (
 
 var defaultServices = sync.OnceValue(func() ctx.ServicePackage {
 	return ctx.PackageOf(
-		NewRestServer(u.GetInterfaceName[RestServer](), "BASE"),
+		NewRestServer(u.GetInterfaceName[RestServer](), "BASE", 8088),
 	)
 })
 

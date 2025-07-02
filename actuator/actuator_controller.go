@@ -22,30 +22,30 @@ type controller struct {
 	promHandler http.Handler
 }
 
-func (instance *controller) Init(provider ctx.ServiceProvider) {
-	server := provider.ByName(instance.serverServiceName).(httpserver.RestServer)
+func (c *controller) Init(provider ctx.ServiceProvider) {
+	server := provider.ByName(c.serverServiceName).(httpserver.RestServer)
 
-	instance.l.Info("register on server", instance.serverServiceName)
+	c.l.Info("register on server", c.serverServiceName)
 
-	instance.promHandler = promhttp.Handler()
+	c.promHandler = promhttp.Handler()
 
-	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health").Handler(instance.health)
-	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health/plain").HandlerRaw(instance.healthPlainText)
-	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/services").Handler(instance.services)
-	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/metrics").HandlerRaw(instance.metrics)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health").Handler(c.health)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/health/plain").HandlerRaw(c.healthPlainText)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/services").Handler(c.services)
+	httpserver.RegisterRoute(server, http.MethodGet, "/actuator/metrics").HandlerRaw(c.metrics)
 }
 
-func (instance *controller) Name() string {
+func (c *controller) Name() string {
 	return controllerName
 }
 
-func (instance *controller) health(*httpserver.RequestData) (rs httpserver.Response) {
-	rs.Ok().Content(instance.appContext.Health().Aggregate())
+func (c *controller) health(*httpserver.RequestData) (rs httpserver.Response) {
+	rs.Ok().Content(c.appContext.Health().Aggregate())
 	return
 }
 
-func (instance *controller) healthPlainText(_ *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
-	statusString := fmt.Sprint(instance.appContext.Health().Aggregate().Status)
+func (c *controller) healthPlainText(_ *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
+	statusString := fmt.Sprint(c.appContext.Health().Aggregate().Status)
 	w := responseWriter.(http.ResponseWriter)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -53,8 +53,8 @@ func (instance *controller) healthPlainText(_ *httpserver.RequestData, responseW
 	return err
 }
 
-func (instance *controller) services(*httpserver.RequestData) (rs httpserver.Response) {
-	services := instance.appContext.Stats().Services()
+func (c *controller) services(*httpserver.RequestData) (rs httpserver.Response) {
+	services := c.appContext.Stats().Services()
 	result := make(map[string]ServiceDescription)
 	for _, descriptor := range services {
 		srv := ServiceDescription{
@@ -70,7 +70,7 @@ func (instance *controller) services(*httpserver.RequestData) (rs httpserver.Res
 	return
 }
 
-func (instance *controller) metrics(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
-	instance.promHandler.ServeHTTP(responseWriter.(http.ResponseWriter), request.Request)
+func (c *controller) metrics(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
+	c.promHandler.ServeHTTP(responseWriter.(http.ResponseWriter), request.Request)
 	return nil
 }

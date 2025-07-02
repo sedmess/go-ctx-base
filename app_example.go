@@ -9,6 +9,7 @@ import (
 	"github.com/sedmess/go-ctx-base/httpserver"
 	"github.com/sedmess/go-ctx-base/logconfig"
 	_ "github.com/sedmess/go-ctx-base/logconfig"
+	"github.com/sedmess/go-ctx-base/profiler"
 	"github.com/sedmess/go-ctx-base/scheduler"
 	"github.com/sedmess/go-ctx-base/utils/channels"
 	"github.com/sedmess/go-ctx/ctx"
@@ -65,7 +66,7 @@ type messageController struct {
 	l      logger.Logger         `ctx:""`
 	server httpserver.RestServer `ctx:""`
 
-	messageService *messageService `ctx:""`
+	messageService MessageService `ctx:""`
 
 	newMessagesCounter prometheus.Counter
 }
@@ -127,9 +128,16 @@ func (c *messageController) getMessages(request *httpserver.RequestData) (rs htt
 	}
 }
 
+type MessageService interface {
+	SaveMessage(from string, to string, text string) error
+	GetMessages(to string, since int64) channels.StreamingChan[Message]
+}
+
 // messageService provides business logic for message storage and retrieval.
 // Handles database operations and scheduled cleanup of old messages.
 type messageService struct {
+	MessageService `ctx:"impl"`
+
 	l  logger.Logger `ctx:""`
 	db db.Connection `ctx:""`
 
@@ -206,7 +214,7 @@ type fsController struct {
 // Serves files from the application's working directory under /static/ path.
 func (c *fsController) Init() {
 	fileServerHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./")))
-	httpserver.BuildRoute(c.server).Method("GET").Path("/static/*").HandlerRaw(func(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
+	httpserver.BuildRoute(c.server).Path("/static/*").HandlerRaw(func(request *httpserver.RequestData, responseWriter rest.ResponseWriter) error {
 		fileServerHandler.ServeHTTP(responseWriter.(http.ResponseWriter), request.Request)
 		return nil
 	})
@@ -218,9 +226,10 @@ var Packages = []ctx.ServicePackage{
 	httpserver.Default(),
 	db.Default(),
 	scheduler.Default(),
+	actuator.RunAsIndependentServer(),
+	profiler.RunAsIndependentServer(),
 	ctx.PackageOf(
 		&controllerSecurity{},
-		actuator.AddToDefaultHttpServer(),
 		&messageController{},
 		&messageService{},
 		&fsController{},

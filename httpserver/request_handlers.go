@@ -181,7 +181,7 @@ func defineRoutes(methods map[string]bool) (res []func(path string, handler rest
 		res = []func(path string, handler rest.HandlerFunc) *rest.Route{rest.Get, rest.Post}
 		return
 	}
-	for method, _ := range methods {
+	for method := range methods {
 		switch method {
 		case http.MethodGet:
 			res = append(res, rest.Get)

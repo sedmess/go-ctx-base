@@ -9,6 +9,7 @@ import (
 	"github.com/sedmess/go-ctx/u"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,12 +28,12 @@ const serverMaxHeaderSizeDefault = 1048576    // 1 MB
 var serverReadTimeoutDefault = 60 * time.Second
 var serverWriteTimeoutDefault = 60 * time.Second
 
-func NewRestServer(name string, configPrefix string) RestServer {
-	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: false}
+func NewRestServer(name string, configPrefix string, defPort int) RestServer {
+	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: false, defPort: defPort}
 }
 
-func NewRestServerSilent(name string, configPrefix string) RestServer {
-	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: true}
+func NewRestServerSilent(name string, configPrefix string, defPort int) RestServer {
+	return &restServer{name: name, prefix: strings.ToUpper(configPrefix), silent: true, defPort: defPort}
 
 }
 
@@ -48,9 +49,10 @@ type Middleware func(chain rest.HandlerFunc, writer rest.ResponseWriter, request
 type restServer struct {
 	sync.Mutex
 
-	name   string
-	prefix string
-	silent bool
+	name    string
+	prefix  string
+	silent  bool
+	defPort int
 
 	l logger.Logger `ctx:""`
 
@@ -63,7 +65,7 @@ type restServer struct {
 
 func (instance *restServer) Init() {
 	instance.server = &http.Server{
-		Addr:           instance.getEnv(serverListenKey).AsStringDefault("127.0.0.1:8088"),
+		Addr:           instance.getEnv(serverListenKey).AsStringDefault("127.0.0.1:" + strconv.Itoa(instance.defPort)),
 		MaxHeaderBytes: instance.getEnv(serverMaxHeaderSizeKey).AsIntDefault(serverMaxHeaderSizeDefault),
 		ReadTimeout:    instance.getEnv(serverReadTimeoutKey).AsDurationDefault(serverReadTimeoutDefault),
 		WriteTimeout:   instance.getEnv(serverWriteTimeoutKey).AsDurationDefault(serverWriteTimeoutDefault),
