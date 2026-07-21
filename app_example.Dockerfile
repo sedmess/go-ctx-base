@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.24 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 
 ARG TARGETARCH=amd64
 ARG VERSION=devbuild
@@ -9,9 +9,9 @@ WORKDIR /build
 COPY go.* ./
 RUN go mod download
 COPY . .
-RUN mkdir bin && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-s -w -X 'github.com/sedmess/go-ctx/ctx/appinfo.Version=$VERSION' -X 'github.com/sedmess/go-ctx/ctx/appinfo.BuildInfo=build $COMMIT ($(date)'" -o ./bin/app-$TARGETARCH ./
+RUN mkdir bin && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-s -w -X 'github.com/sedmess/go-ctx/ctx/appinfo.Version=$VERSION' -X 'github.com/sedmess/go-ctx/ctx/appinfo.BuildInfo=build $COMMIT ($(date))'" -o ./bin/app-$TARGETARCH ./
 
-FROM alpine:3.21
+FROM alpine:3.24
 
 ARG TARGETARCH=amd64
 ARG VERSION=devbuild

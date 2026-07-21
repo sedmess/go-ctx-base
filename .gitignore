@@ -21,3 +21,13 @@ build/bin
 
 *.log
 .aider*
+
+# Editor and operating-system artifacts
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+
+# Spec Kit local active-feature selection (contains an absolute workspace path)
+.specify/feature.json

@@ -19,11 +19,17 @@ const (
 
 func BearerTokenAuthenticator(authFn func(path string, token string) AuthenticationResultCode) Middleware {
 	return func(chain rest.HandlerFunc, writer rest.ResponseWriter, request *rest.Request) error {
-		token := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
+		authorization := strings.Fields(request.Header.Get("Authorization"))
+		if len(authorization) != 2 || !strings.EqualFold(authorization[0], "Bearer") || authorization[1] == "" {
+			writer.Header().Set("WWW-Authenticate", "Bearer")
+			writer.WriteHeader(http.StatusUnauthorized)
+			return nil
+		}
+		token := authorization[1]
 		result := authFn(request.RequestURI, token)
 		switch result {
 		case Authorized:
-			request.Env[credentialEnvKey] = int64(murmur3.Sum64([]byte(token)))
+			storeCredential(request, token)
 			chain(writer, request)
 			return nil
 		case Forbidden:
@@ -50,7 +56,7 @@ func BasicAuthenticator(authFn func(path string, username string, password strin
 
 		switch result {
 		case Authorized:
-			request.Env[credentialEnvKey] = username
+			storeCredential(request, username)
 			chain(writer, request)
 			return nil
 		case Forbidden:
@@ -64,4 +70,11 @@ func BasicAuthenticator(authFn func(path string, username string, password strin
 			return errors.New("unknown authenticator result: " + strconv.Itoa(int(result)))
 		}
 	}
+}
+
+func storeCredential(request *rest.Request, identity string) {
+	if request.Env == nil {
+		request.Env = make(map[string]interface{})
+	}
+	request.Env[credentialEnvKey] = int64(murmur3.Sum64([]byte(identity)))
 }

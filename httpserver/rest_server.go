@@ -3,15 +3,18 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/sedmess/go-ctx/ctx"
 	"github.com/sedmess/go-ctx/ctx/logger"
 	"github.com/sedmess/go-ctx/u"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,67 +50,81 @@ type RestServer interface {
 type Middleware func(chain rest.HandlerFunc, writer rest.ResponseWriter, request *rest.Request) error
 
 type restServer struct {
-	sync.Mutex
+	mu sync.Mutex
 
 	name    string
 	prefix  string
 	silent  bool
 	defPort int
 
-	l logger.Logger `ctx:""`
+	l           logger.Logger   `ctx:""`
+	rootContext context.Context `ctx:"context"`
 
-	server           *http.Server
-	api              *rest.Api
-	middlewares      []Middleware
-	routes           []*rest.Route
-	requestSizeLimit int64
+	persistentMiddlewares []Middleware
+	persistentRoutes      []*rest.Route
+	generation            *restServerGeneration
 }
 
-func (instance *restServer) Init() {
-	instance.server = &http.Server{
-		Addr:           instance.getEnv(serverListenKey).AsStringDefault("127.0.0.1:" + strconv.Itoa(instance.defPort)),
+type restServerGeneration struct {
+	server           *http.Server
+	listener         net.Listener
+	requestContext   context.Context
+	cancelRequests   context.CancelFunc
+	requestSizeLimit int64
+	middlewares      []Middleware
+	routes           []*rest.Route
+	serveDone        chan struct{}
+	started          atomic.Bool
+	stopOnce         sync.Once
+	stopErr          error
+}
+
+func (instance *restServer) Init() error {
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	if instance.generation != nil {
+		return fmt.Errorf("http server %q is already initialized", instance.name)
+	}
+	if instance.l == nil {
+		instance.l = logger.New(instance.name)
+	}
+
+	serverAddress := instance.getEnv(serverListenKey).AsStringDefault("127.0.0.1:" + strconv.Itoa(instance.defPort))
+	parentContext := instance.rootContext
+	if parentContext == nil {
+		parentContext = context.Background()
+	}
+	requestContext, cancelRequests := context.WithCancel(parentContext)
+
+	server := &http.Server{
+		Addr:           serverAddress,
 		MaxHeaderBytes: instance.getEnv(serverMaxHeaderSizeKey).AsIntDefault(serverMaxHeaderSizeDefault),
 		ReadTimeout:    instance.getEnv(serverReadTimeoutKey).AsDurationDefault(serverReadTimeoutDefault),
 		WriteTimeout:   instance.getEnv(serverWriteTimeoutKey).AsDurationDefault(serverWriteTimeoutDefault),
-	}
-	instance.requestSizeLimit = int64(ctx.GetEnv(serverRequestSizeLimitKey).AsIntDefault(serverRequestSizeLimitDefault))
-
-	instance.api = rest.NewApi()
-
-	logFormat := "[" + instance.name + "] %h %l %u \"%r\" %s %b"
-
-	debugLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
-		instance.l.Debug(msg)
-	}}, "", 0)
-	errorLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
-		instance.l.Error(msg)
-	}}, "", 0)
-
-	var middlewares []rest.Middleware
-	if instance.silent {
-		middlewares = []rest.Middleware{
-			&rest.RecoverMiddleware{
-				Logger: errorLoggerAdapter,
-			},
-		}
-	} else {
-		middlewares = []rest.Middleware{
-			&rest.AccessLogApacheMiddleware{
-				Logger: debugLoggerAdapter,
-				Format: rest.AccessLogFormat(logFormat),
-			},
-			createPrometheusMiddleware(instance.name),
-			&rest.TimerMiddleware{},
-			&rest.RecorderMiddleware{},
-			&rest.RecoverMiddleware{
-				Logger: errorLoggerAdapter,
-			},
-		}
+		BaseContext: func(net.Listener) context.Context {
+			return requestContext
+		},
 	}
 
-	instance.api.Use(
-		middlewares...,
-	)
+	bindAddress := effectiveBindAddress(serverAddress)
+	listener, err := net.Listen("tcp", bindAddress)
+	if err != nil {
+		cancelRequests()
+		return fmt.Errorf("http server %q cannot listen on %q: %w", instance.name, bindAddress, err)
+	}
+
+	instance.generation = &restServerGeneration{
+		server:           server,
+		listener:         listener,
+		requestContext:   requestContext,
+		cancelRequests:   cancelRequests,
+		requestSizeLimit: int64(ctx.GetEnv(serverRequestSizeLimitKey).AsIntDefault(serverRequestSizeLimitDefault)),
+		middlewares:      make([]Middleware, 0),
+		routes:           make([]*rest.Route, 0),
+		serveDone:        make(chan struct{}),
+	}
+	return nil
 }
 
 func (instance *restServer) Name() string {
@@ -119,29 +136,63 @@ func (instance *restServer) logger() logger.Logger {
 }
 
 func (instance *restServer) AddMiddleware(middleware Middleware) RestServer {
-	instance.Lock()
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
 
-	instance.middlewares = append(instance.middlewares, middleware)
-
-	instance.Unlock()
-
+	if instance.generation == nil {
+		instance.persistentMiddlewares = append(instance.persistentMiddlewares, middleware)
+		return instance
+	}
+	if instance.generation.started.Load() {
+		panic(fmt.Sprintf("http server %q middleware registration after start", instance.name))
+	}
+	instance.generation.middlewares = append(instance.generation.middlewares, middleware)
 	return instance
 }
 
 func (instance *restServer) registerRoute(route *rest.Route) {
-	instance.Lock()
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
 
-	instance.routes = append(instance.routes, route)
+	if instance.generation != nil && instance.generation.started.Load() {
+		panic(fmt.Sprintf("http server %q route registration after start", instance.name))
+	}
 
-	instance.Unlock()
+	routes := make([]*rest.Route, 0, len(instance.persistentRoutes)+1)
+	routes = append(routes, instance.persistentRoutes...)
+	if instance.generation != nil {
+		routes = append(routes, instance.generation.routes...)
+	}
+	routes = append(routes, route)
+	if _, err := rest.MakeRouter(routes...); err != nil {
+		panic(fmt.Errorf("http server %q invalid route registration: %w", instance.name, err))
+	}
+
+	if instance.generation == nil {
+		instance.persistentRoutes = append(instance.persistentRoutes, route)
+	} else {
+		instance.generation.routes = append(instance.generation.routes, route)
+	}
 }
 
 func (instance *restServer) AfterStart() {
-	instance.Lock()
-	defer instance.Unlock()
+	instance.mu.Lock()
+	generation := instance.generation
+	if generation == nil {
+		instance.mu.Unlock()
+		panic(fmt.Sprintf("http server %q has not been initialized", instance.name))
+	}
+	if generation.started.Load() {
+		instance.mu.Unlock()
+		return
+	}
 
-	for _, middleware := range instance.middlewares {
-		instance.api.Use(rest.MiddlewareSimple(func(handler rest.HandlerFunc) rest.HandlerFunc {
+	api := instance.newAPI()
+	middlewares := make([]Middleware, 0, len(instance.persistentMiddlewares)+len(generation.middlewares))
+	middlewares = append(middlewares, instance.persistentMiddlewares...)
+	middlewares = append(middlewares, generation.middlewares...)
+	for _, middleware := range middlewares {
+		api.Use(rest.MiddlewareSimple(func(handler rest.HandlerFunc) rest.HandlerFunc {
 			return func(writer rest.ResponseWriter, request *rest.Request) {
 				if err := middleware(handler, writer, request); err != nil {
 					instance.l.Error("on middleware:", err)
@@ -151,15 +202,24 @@ func (instance *restServer) AfterStart() {
 		}))
 	}
 
-	instance.api.SetApp(u.Must2(rest.MakeRouter(instance.routes...)))
-	instance.server.Handler = &requestSizeLimitHandlerWrapper{
-		handler:        instance.api.MakeHandler(),
-		maxRequestSize: instance.requestSizeLimit,
+	routes := make([]*rest.Route, 0, len(instance.persistentRoutes)+len(generation.routes))
+	routes = append(routes, instance.persistentRoutes...)
+	routes = append(routes, generation.routes...)
+	api.SetApp(u.Must2(rest.MakeRouter(routes...)))
+	generation.server.Handler = &requestSizeLimitHandlerWrapper{
+		handler:        api.MakeHandler(),
+		maxRequestSize: generation.requestSizeLimit,
 	}
+	generation.started.Store(true)
+	instance.mu.Unlock()
+
 	go func() {
-		instance.l.Info("http server started on", instance.server.Addr)
-		if err := instance.server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			instance.l.Fatal(err)
+		defer close(generation.serveDone)
+		instance.l.Info("http server started on", generation.listener.Addr().String())
+		if err := generation.server.Serve(generation.listener); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) &&
+			!errors.Is(err, net.ErrClosed) {
+			instance.l.Error("http server stopped unexpectedly:", err)
 		} else {
 			instance.l.Debug("http server stopped")
 		}
@@ -167,11 +227,93 @@ func (instance *restServer) AfterStart() {
 }
 
 func (instance *restServer) BeforeStop() {
-	timeoutContext, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelFunc()
-	if err := instance.server.Shutdown(timeoutContext); err != nil {
-		instance.l.Error("error on http server shutdown", err)
+	instance.mu.Lock()
+	generation := instance.generation
+	instance.mu.Unlock()
+	if generation == nil {
+		return
 	}
+	if err := instance.stopGeneration(generation); err != nil {
+		instance.l.Error("error on http server shutdown:", err)
+	}
+}
+
+func (instance *restServer) Dispose() error {
+	instance.mu.Lock()
+	generation := instance.generation
+	instance.mu.Unlock()
+	if generation == nil {
+		return nil
+	}
+
+	err := instance.stopGeneration(generation)
+	instance.mu.Lock()
+	if instance.generation == generation {
+		instance.generation = nil
+	}
+	instance.mu.Unlock()
+	return err
+}
+
+func (instance *restServer) stopGeneration(generation *restServerGeneration) error {
+	generation.stopOnce.Do(func() {
+		generation.cancelRequests()
+		if generation.started.Load() {
+			timeoutContext, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+			generation.stopErr = generation.server.Shutdown(timeoutContext)
+			cancelFunc()
+			if generation.stopErr != nil {
+				_ = generation.server.Close()
+			}
+			<-generation.serveDone
+		} else if err := generation.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			generation.stopErr = err
+		}
+	})
+	return generation.stopErr
+}
+
+func (instance *restServer) newAPI() *rest.Api {
+	api := rest.NewApi()
+	logFormat := "[" + instance.name + "] %h %l %u \"%r\" %s %b"
+	debugLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
+		instance.l.Debug(msg)
+	}}, "", 0)
+	errorLoggerAdapter := log.New(&logAdapter{loggingFn: func(msg string) {
+		instance.l.Error(msg)
+	}}, "", 0)
+
+	if instance.silent {
+		api.Use(&rest.RecoverMiddleware{Logger: errorLoggerAdapter})
+	} else {
+		api.Use(
+			&rest.AccessLogApacheMiddleware{
+				Logger: debugLoggerAdapter,
+				Format: rest.AccessLogFormat(logFormat),
+			},
+			createPrometheusMiddleware(instance.name),
+			&rest.TimerMiddleware{},
+			&rest.RecorderMiddleware{},
+			&rest.RecoverMiddleware{Logger: errorLoggerAdapter},
+		)
+	}
+	return api
+}
+
+func (instance *restServer) boundAddress() (net.Addr, bool) {
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+	if instance.generation == nil || instance.generation.listener == nil {
+		return nil, false
+	}
+	return instance.generation.listener.Addr(), true
+}
+
+func effectiveBindAddress(address string) string {
+	if address == "" {
+		return ":http"
+	}
+	return address
 }
 
 func (instance *restServer) getEnv(name string) *ctx.EnvValue {

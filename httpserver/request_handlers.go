@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+const routePathEnvKey = "httpserver.route_path"
+
 type TypedRequestHandler[T any] interface {
 	Path(path string) TypedRequestHandler[T]
 	Method(method string) TypedRequestHandler[T]
@@ -101,7 +103,7 @@ func (r *typedRqHandler[T]) Handler(handler func(request *RequestData, body T) R
 	}
 
 	for _, route := range routes {
-		r.server.registerRoute(route(r.path, handlerFunc))
+		r.server.registerRoute(withRouteMetadata(route(r.path, handlerFunc)))
 	}
 }
 
@@ -172,8 +174,24 @@ func (r *rqHandler) HandlerRaw(handler func(request *RequestData, responseWriter
 	}
 
 	for _, route := range routes {
-		r.server.registerRoute(route(r.path, handlerFunc))
+		r.server.registerRoute(withRouteMetadata(route(r.path, handlerFunc)))
 	}
+}
+
+// withRouteMetadata attaches the finite registered expression before any
+// route-specific middleware or handler runs. Outer server middleware can read
+// it after handling without using request-controlled URL data.
+func withRouteMetadata(route *rest.Route) *rest.Route {
+	pathExpression := route.PathExp
+	handler := route.Func
+	route.Func = func(writer rest.ResponseWriter, request *rest.Request) {
+		if request.Env == nil {
+			request.Env = make(map[string]interface{})
+		}
+		request.Env[routePathEnvKey] = pathExpression
+		handler(writer, request)
+	}
+	return route
 }
 
 func defineRoutes(methods map[string]bool) (res []func(path string, handler rest.HandlerFunc) *rest.Route) {

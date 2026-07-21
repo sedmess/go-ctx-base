@@ -44,24 +44,60 @@ func IfError[T any](T, error) Optional[T]
 
 ## Streaming Channels (`channels/streaming.go`)
 
-Reactive-style streaming primitives:
+`StreamingChan[T]` remains a named receive-only channel of data-or-error elements. Legacy
+constructors and transforms keep their original ordering, capacity, and backpressure behavior:
 
 ```go
-// Create unbuffered stream
-func CreateChannel[T](func(sink func(T, context.Context) bool)) StreamingChan[T]
+func SingleElemChannel[T any](data T) StreamingChan[T]
+func SingleElemChannelErr[T any](data T, err error) StreamingChan[T]
+func SliceToChannel[T any](data []T) StreamingChan[T]
 
-// Create buffered batch stream
-func CreateChannelBuffered[T](int, func(func([]T, context.Context) bool)) StreamingChan[T]
+func CreateChannel[T any](
+    generator func(sink func(T, context.Context) bool) error,
+) StreamingChan[T]
 
-// Transformations
-func Map[P, Q](StreamingChan[P], func(P) Q) StreamingChan[Q]
-func FlatMap[P, Q](StreamingChan[P], func(P) StreamingChan[Q]) StreamingChan[Q]
+func CreateChannelBuffered[T any](
+    size int,
+    generator func(sink func([]T, context.Context) bool) error,
+) StreamingChan[T]
+
+func Map[P, Q any](StreamingChan[P], func(P) Q) StreamingChan[Q]
+func FlapMap[P, Q any](StreamingChan[P], func(P) StreamingChan[Q]) StreamingChan[Q]
 ```
 
-**Exceptional**:
-- Context-aware channel sending
-- Automatic error propagation
-- Batch buffering support
+The historical `FlapMap` spelling is a compatibility contract. Legacy streams cannot detect that
+a receive-only channel has been abandoned, so callers must drain them through closure.
+
+Use the additive context-owned surface whenever a consumer may stop early:
+
+```go
+func SingleElemChannelContext[T any](context.Context, T) StreamingChan[T]
+func SingleElemChannelErrContext[T any](context.Context, T, error) StreamingChan[T]
+func SliceToChannelContext[T any](context.Context, []T) StreamingChan[T]
+func CreateChannelContext[T any](
+    context.Context,
+    func(sink func(T, context.Context) bool) error,
+) StreamingChan[T]
+func CreateChannelBufferedContext[T any](
+    context.Context,
+    int,
+    func(sink func([]T, context.Context) bool) error,
+) StreamingChan[T]
+func MapContext[P, Q any](context.Context, StreamingChan[P], func(P) Q) StreamingChan[Q]
+func FlatMapContext[P, Q any](context.Context, StreamingChan[P], func(P) StreamingChan[Q]) StreamingChan[Q]
+func (StreamingChan[T]) ForEachChanElemContext(context.Context, func(T) error) error
+func (StreamingChan[T]) CollectToSliceContext(context.Context) ([]T, error)
+```
+
+Operation contexts must be non-nil. The producer owns and closes its output exactly once. Values
+remain ordered, buffered constructors retain the requested finite capacity, and both the shared
+operation context and each per-send context interrupt blocked sends. A generator error produces
+at most one terminal error while the consumer can still receive it. A callback error is returned
+as the consumer result; cancellation returns the context error and collection may also return the
+values received before cancellation.
+
+To abandon a context-owned chain, cancel its shared context before stopping receipt. Use that same
+context for every owned constructor, transform, database stream, iteration, and collection stage.
 
 ## Concurrent Execution (`concurrent/executors.go`)
 
@@ -88,7 +124,7 @@ func (p *ExecutionPool) AwaitAll() int
 
 1. **Channel Error Handling**:
    - Automatic error wrapping with `ChanElem`
-   - Context cancellation propagation
+   - Shared operation-context cancellation for additive stream APIs
    - Broken sink detection with stack traces
 
 2. **Concurrency Safety**:

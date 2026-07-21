@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -20,25 +22,21 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
 )
 
-// controllerSecurity handles authentication middleware configuration for the HTTP server.
-// It validates bearer tokens for non-actuator endpoints using environment-configured tokens.
+// controllerSecurity handles authentication middleware configuration for application routes.
+// Actuator and profiler enforce their own component-scoped control-plane policies.
 type controllerSecurity struct {
 	l      logger.Logger         `ctx:""`
 	server httpserver.RestServer `ctx:""`
 	tokens map[string]bool       `env:"HTTP_AUTH_TOKENS"`
 }
 
-// Init registers the bearer token authentication middleware with the HTTP server.
-// Skips authentication for actuator endpoints and validates configured tokens for other routes.
+// Init registers bearer authentication for every route on the application HTTP server.
 func (s *controllerSecurity) Init() {
-	s.server.AddMiddleware(httpserver.BearerTokenAuthenticator(func(path string, token string) httpserver.AuthenticationResultCode {
-		if strings.HasPrefix(path, "/actuator") {
-			return httpserver.Authorized
-		}
+	s.server.AddMiddleware(httpserver.BearerTokenAuthenticator(func(_ string, token string) httpserver.AuthenticationResultCode {
 		if token == "" {
 			return httpserver.AuthenticationRequired
 		}
@@ -71,15 +69,17 @@ type messageController struct {
 	newMessagesCounter prometheus.Counter
 }
 
+var sharedNewMessagesCounter = sync.OnceValue(func() prometheus.Counter {
+	return promauto.NewCounter(prometheus.CounterOpts{Name: "new_messages_total"})
+})
+
 // Init registers the message controller's HTTP routes and initializes metrics collection.
 // Sets up POST /messages and GET /messages endpoints.
 func (c *messageController) Init() {
 	httpserver.BuildTypedRoute[string](c.server).Method(http.MethodPost).Path("/messages").Handler(c.newMessage)
 	httpserver.BuildRoute(c.server).Method(http.MethodGet).Path("/messages").Handler(c.getMessages)
 
-	c.newMessagesCounter = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "new_messages_total",
-	})
+	c.newMessagesCounter = sharedNewMessagesCounter()
 }
 
 // newMessage handles message creation requests. Validates required from/to parameters,
@@ -151,8 +151,9 @@ type messageService struct {
 func (s *messageService) Init() error {
 	s.db.AutoMigrate(&Message{})
 
-	if _, err := s.scheduler.ScheduleTaskCron(s.messageCleanupCron, "messages-cleanup", func() {
-		if err := s.removeMessagesBefore(time.Now().Add(-s.messageTTL)); err != nil {
+	if _, err := s.scheduler.ScheduleTaskCronContext(s.messageCleanupCron, "messages-cleanup", func(taskContext context.Context) {
+		if err := s.removeMessagesBefore(taskContext, time.Now().Add(-s.messageTTL)); err != nil &&
+			!errors.Is(err, context.Canceled) {
 			s.l.Error("cleanup task failed:", err)
 		}
 	}); err != nil {
@@ -189,8 +190,8 @@ func (s *messageService) GetMessages(to string, since int64) channels.StreamingC
 
 // removeMessagesBefore deletes messages older than specified time.
 // Used by the scheduled cleanup task to maintain database size.
-func (s *messageService) removeMessagesBefore(time time.Time) error {
-	return s.db.Session(func(session *db.Session) error {
+func (s *messageService) removeMessagesBefore(taskContext context.Context, time time.Time) error {
+	return s.db.SessionContext(taskContext, func(session *db.Session) error {
 		return session.Tx(func(session *db.Session) error {
 			result := session.Where("rec_created < ?", time).Delete(&Message{})
 			if result.Error != nil {

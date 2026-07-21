@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"github.com/sedmess/go-ctx-base/utils/channels"
-	"github.com/sedmess/go-ctx/ctx/logger"
 	"gorm.io/gorm"
 )
 
@@ -61,11 +60,16 @@ func SessionStream[T any](connection Connection, fetchSize int, selectFn func(se
 	return SessionContextStream[T](context.Background(), connection, fetchSize, selectFn)
 }
 
+// SessionContextStream streams paginated query results with one shared context for pool work,
+// queries, page delivery, and terminal completion. Cancel ctx before abandoning the output.
 func SessionContextStream[T any](ctx context.Context, connection Connection, fetchSize int, selectFn func(session *gorm.DB) *gorm.DB) channels.StreamingChan[T] {
 	paginator := NewPaginator(fetchSize)
-	return channels.CreateChannelBuffered[T](fetchSize, func(sink func(data []T, context context.Context) bool) error {
+	return channels.CreateChannelBufferedContext[T](ctx, fetchSize, func(sink func(data []T, sendContext context.Context) bool) error {
 		return connection.SessionContext(ctx, func(session *Session) error {
 			for paginator.HasNext() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				var list []T
 				result := selectFn(session.Scopes(paginator.Scope())).Find(&list)
 				if result.Error != nil {
@@ -73,8 +77,13 @@ func SessionContextStream[T any](ctx context.Context, connection Connection, fet
 				}
 				paginator.OffsetResult(result)
 				if !sink(list, session) {
-					logger.Error("DB", "breaking TX by timeout")
-					return errors.New("transaction timeout expired")
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+					if err := session.Err(); err != nil {
+						return err
+					}
+					return errors.New("database stream send canceled")
 				}
 			}
 			return nil

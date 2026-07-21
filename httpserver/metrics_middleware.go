@@ -4,9 +4,13 @@ import (
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"net/http"
 	"strconv"
 	"time"
 )
+
+const unmatchedRouteLabel = "unmatched"
+const otherMethodLabel = "OTHER"
 
 type prometheusMetrics struct {
 	reqCounter  *prometheus.CounterVec
@@ -45,12 +49,13 @@ func (p *prometheusMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.Han
 
 		labels := prometheus.Labels{
 			"server": p.name,
-			"method": request.Method,
-			"path":   request.URL.Path,
+			"code":   strconv.Itoa(http.StatusOK),
+			"method": boundedMetricMethod(request.Method),
+			"path":   metricRoutePath(request),
 		}
 
-		if request.Env["STATUS_CODE"] != nil {
-			labels["code"] = strconv.Itoa(request.Env["STATUS_CODE"].(int))
+		if status, ok := request.Env["STATUS_CODE"].(int); ok && status > 0 {
+			labels["code"] = strconv.Itoa(status)
 		}
 
 		metrics.reqCounter.With(labels).Inc()
@@ -64,4 +69,29 @@ func (p *prometheusMiddleware) MiddlewareFunc(handler rest.HandlerFunc) rest.Han
 			metrics.reqBytes.With(labels).Observe(float64(bytesWritten))
 		}
 	}
+}
+
+func boundedMetricMethod(method string) string {
+	switch method {
+	case http.MethodGet,
+		http.MethodHead,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete,
+		http.MethodOptions:
+		return method
+	default:
+		return otherMethodLabel
+	}
+}
+
+func metricRoutePath(request *rest.Request) string {
+	if request == nil || request.Env == nil {
+		return unmatchedRouteLabel
+	}
+	if path, ok := request.Env[routePathEnvKey].(string); ok && path != "" {
+		return path
+	}
+	return unmatchedRouteLabel
 }

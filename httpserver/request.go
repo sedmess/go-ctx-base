@@ -15,10 +15,20 @@ func (d *RequestData) Query() url.Values {
 	return d.URL.Query()
 }
 
+// Credential returns the request-scoped numeric identity established by successful
+// authentication middleware. It is not authorization proof for another request or policy;
+// absent and invalid request-local state returns zero.
 func (d *RequestData) Credential() int64 {
-	if cred, found := d.Env[credentialEnvKey]; found {
-		return cred.(int64)
-	} else {
+	if d == nil || d.Env == nil {
 		return 0
 	}
+	credential, found := d.Env[credentialEnvKey]
+	if !found {
+		return 0
+	}
+	numericCredential, valid := credential.(int64)
+	if !valid {
+		return 0
+	}
+	return numericCredential
 }
