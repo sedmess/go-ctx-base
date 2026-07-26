@@ -1,0 +1,124 @@
+go-ctx-base HTTP loopback benchmark raw samples
+Measured: 2026-07-26
+Parent commit: e09820d1c01607687b47b47bcf2c93679a386245
+Go: go1.26.5 windows/amd64
+CPU: AMD Ryzen 7 4800H with Radeon Graphics
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerLoopback$/^.*$/^.*$/^parallel$' -benchmem -benchtime=2s -count=5 -cpu=8
+
+BenchmarkRestServerLoopback/instrumented/json/parallel-8         	   87441	     25906 ns/op	     38601 req/s	    8590 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-8         	   92888	     27069 ns/op	     36942 req/s	    8588 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-8         	   86066	     26864 ns/op	     37225 req/s	    8589 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-8         	   94520	     26896 ns/op	     37180 req/s	    8591 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-8         	   91065	     26243 ns/op	     38105 req/s	    8595 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/raw/parallel-8          	   91069	     26625 ns/op	     37559 req/s	    8499 B/op	     142 allocs/op
+BenchmarkRestServerLoopback/instrumented/raw/parallel-8          	   81469	     25914 ns/op	     38589 req/s	    8501 B/op	     142 allocs/op
+BenchmarkRestServerLoopback/instrumented/raw/parallel-8          	   93462	     25120 ns/op	     39808 req/s	    8486 B/op	     142 allocs/op
+BenchmarkRestServerLoopback/instrumented/raw/parallel-8          	   92384	     27767 ns/op	     36014 req/s	    8500 B/op	     143 allocs/op
+BenchmarkRestServerLoopback/instrumented/raw/parallel-8          	   89223	     25747 ns/op	     38840 req/s	    8498 B/op	     142 allocs/op
+BenchmarkRestServerLoopback/silent/json/parallel-8               	  119014	     21654 ns/op	     46181 req/s	    5989 B/op	      79 allocs/op
+BenchmarkRestServerLoopback/silent/json/parallel-8               	   98164	     23065 ns/op	     43356 req/s	    5987 B/op	      79 allocs/op
+BenchmarkRestServerLoopback/silent/json/parallel-8               	  106352	     21179 ns/op	     47217 req/s	    5987 B/op	      79 allocs/op
+BenchmarkRestServerLoopback/silent/json/parallel-8               	  111864	     21364 ns/op	     46808 req/s	    5990 B/op	      79 allocs/op
+BenchmarkRestServerLoopback/silent/json/parallel-8               	  105314	     21003 ns/op	     47613 req/s	    5991 B/op	      79 allocs/op
+BenchmarkRestServerLoopback/silent/raw/parallel-8                	  100059	     21542 ns/op	     46420 req/s	    5915 B/op	      77 allocs/op
+BenchmarkRestServerLoopback/silent/raw/parallel-8                	  118054	     20936 ns/op	     47764 req/s	    5916 B/op	      77 allocs/op
+BenchmarkRestServerLoopback/silent/raw/parallel-8                	  107295	     24348 ns/op	     41072 req/s	    5925 B/op	      77 allocs/op
+BenchmarkRestServerLoopback/silent/raw/parallel-8                	  102349	     22916 ns/op	     43638 req/s	    5916 B/op	      77 allocs/op
+BenchmarkRestServerLoopback/silent/raw/parallel-8                	  111662	     23128 ns/op	     43238 req/s	    5921 B/op	      77 allocs/op
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerLoopback$/^instrumented$/^json$/^parallel$' -benchmem -benchtime=2s -count=5 '-cpu=1,2,4'
+
+BenchmarkRestServerLoopback/instrumented/json/parallel           	   23793	     96877 ns/op	     10322 req/s	    8403 B/op	     145 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel           	   24532	     99390 ns/op	     10061 req/s	    8403 B/op	     145 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel           	   24493	     96877 ns/op	     10322 req/s	    8403 B/op	     145 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel           	   24789	     98676 ns/op	     10134 req/s	    8403 B/op	     145 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel           	   24456	     97553 ns/op	     10251 req/s	    8403 B/op	     145 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-2         	   41744	     56356 ns/op	     17744 req/s	    8402 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-2         	   43458	     56744 ns/op	     17623 req/s	    8402 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-2         	   42370	     57236 ns/op	     17472 req/s	    8403 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-2         	   43084	     56769 ns/op	     17615 req/s	    8401 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-2         	   42469	     52609 ns/op	     19008 req/s	    8401 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-4         	   73383	     32944 ns/op	     30355 req/s	    8437 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-4         	   70161	     33821 ns/op	     29567 req/s	    8436 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-4         	   71679	     34473 ns/op	     29008 req/s	    8435 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-4         	   71672	     33793 ns/op	     29592 req/s	    8435 B/op	     144 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-4         	   68008	     34490 ns/op	     28994 req/s	    8437 B/op	     144 allocs/op
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerLoopback$/^instrumented$/^json$/^parallel$' -benchmem -benchtime=2s -count=5 -cpu=16
+
+BenchmarkRestServerLoopback/instrumented/json/parallel-16         	   26895	     86632 ns/op	     11543 req/s	   12459 B/op	     152 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-16         	   26887	     85623 ns/op	     11679 req/s	   12952 B/op	     153 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-16         	   29044	     87608 ns/op	     11415 req/s	   12138 B/op	     151 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-16         	   27806	     87845 ns/op	     11384 req/s	   11741 B/op	     150 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/parallel-16         	   27115	     87570 ns/op	     11419 req/s	   11827 B/op	     150 allocs/op
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerLoopback$/^instrumented$/^json$/^serial$' -benchmem -benchtime=2s -count=5 -cpu=8
+
+BenchmarkRestServerLoopback/instrumented/json/serial-8  	   14707	    238099 ns/op	      4200 req/s	    8468 B/op	     146 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/serial-8  	    8650	    300880 ns/op	      3324 req/s	    8456 B/op	     146 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/serial-8  	   10000	    276189 ns/op	      3621 req/s	    8460 B/op	     146 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/serial-8  	   10000	    294709 ns/op	      3393 req/s	    8459 B/op	     146 allocs/op
+BenchmarkRestServerLoopback/instrumented/json/serial-8  	    8060	    301343 ns/op	      3318 req/s	    8463 B/op	     146 allocs/op
+
+SQLite extension
+SQLite: 3.53.3 through github.com/glebarez/sqlite v1.11.0 and modernc.org/sqlite v1.54.0
+HTTP: GET for point reads; POST for transactional updates; instrumented framework response
+Schema: one seeded row in httpserver_sqlite_benchmark_records(id INTEGER PRIMARY KEY, value INTEGER NOT NULL)
+DSN: file:<leaf-name>?mode=memory&cache=shared&_pragma=busy_timeout(5000)&_pragma=cache_size(-2000)&_pragma=foreign_keys(1)&_pragma=journal_mode(MEMORY)&_pragma=locking_mode(NORMAL)&_pragma=page_size(4096)&_pragma=synchronous(FULL)&_pragma=temp_store(MEMORY)
+Pools: read max-open/max-idle = worker count; update max-open/max-idle = 1
+Preparation: migrate, seed, validate every physical connection's PRAGMAs, fully open and idle the pool, warm the row/cache, complete HTTP readiness, and reset the update value outside timing
+Validation: every response, selected/affected row, row count, and final value checked; all samples passed
+GORM: v1.31.2; PrepareStmt is configured globally, but SessionContext uses a dedicated sql.Conn, so these results are not labeled prepared-statement throughput
+DB metrics: db-waits/op and db-wait-ns/op are database/sql pool deltas divided by completed requests; wait time is aggregate pool wait, not request latency
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerSQLite$/^point-read$/^parallel$' -benchmem -benchtime=2s -count=5 '-cpu=1,2,4,8'
+
+BenchmarkRestServerSQLite/point-read/parallel           	   13846	    178418 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      5605 req/s	   15931 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel           	   12958	    178101 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      5615 req/s	   15932 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel           	   13527	    173952 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      5749 req/s	   15932 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel           	   12199	    178088 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      5615 req/s	   15932 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel           	   13498	    187587 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      5331 req/s	   15932 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-2         	   18760	    124599 ns/op	         2.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      8026 req/s	   15986 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-2         	   17593	    124619 ns/op	         2.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      8024 req/s	   15990 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-2         	   19240	    131138 ns/op	         2.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      7626 req/s	   15985 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-2         	   18860	    146365 ns/op	         2.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      6832 req/s	   15995 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-2         	   19414	    122811 ns/op	         2.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      8143 req/s	   15992 B/op	     232 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-4         	   28392	     80044 ns/op	         4.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     12493 req/s	   16126 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-4         	   29653	     86261 ns/op	         4.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     11593 req/s	   16126 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-4         	   28261	     81370 ns/op	         4.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     12290 req/s	   16121 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-4         	   29377	     82843 ns/op	         4.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     12071 req/s	   16116 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-4         	   30922	     79635 ns/op	         4.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     12557 req/s	   16106 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-8         	   35838	     67152 ns/op	         8.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     14892 req/s	   16404 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-8         	   37194	     64747 ns/op	         8.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     15445 req/s	   16374 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-8         	   36774	     67432 ns/op	         8.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     14830 req/s	   16375 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-8         	   35760	     67548 ns/op	         8.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     14804 req/s	   16389 B/op	     233 allocs/op
+BenchmarkRestServerSQLite/point-read/parallel-8         	   34864	     69144 ns/op	         8.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	     14462 req/s	   16355 B/op	     233 allocs/op
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerSQLite$/^point-read$/^serial$' -benchmem -benchtime=2s -count=5 -cpu=8
+
+BenchmarkRestServerSQLite/point-read/serial-8  	    9226	    265269 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3770 req/s	   16283 B/op	     234 allocs/op
+BenchmarkRestServerSQLite/point-read/serial-8  	    8964	    367259 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      2723 req/s	   16308 B/op	     234 allocs/op
+BenchmarkRestServerSQLite/point-read/serial-8  	   10000	    277772 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3600 req/s	   16314 B/op	     234 allocs/op
+BenchmarkRestServerSQLite/point-read/serial-8  	    7168	    292618 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3417 req/s	   16318 B/op	     234 allocs/op
+BenchmarkRestServerSQLite/point-read/serial-8  	    8781	    253980 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3937 req/s	   16331 B/op	     234 allocs/op
+
+Command:
+go test ./httpserver -run '^$' -bench '^BenchmarkRestServerSQLite$/^serialized-transactional-update$/^.*$' -benchmem -benchtime=2s -count=5 -cpu=8
+
+BenchmarkRestServerSQLite/serialized-transactional-update/serial-8  	    8214	    305432 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3274 req/s	   20275 B/op	     249 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/serial-8  	    8841	    283106 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3532 req/s	   20308 B/op	     249 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/serial-8  	    8438	    304275 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3286 req/s	   20302 B/op	     249 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/serial-8  	    7660	    283281 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3530 req/s	   20324 B/op	     249 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/serial-8  	    7951	    290484 ns/op	         1.000 db-open-conns	         0 db-wait-ns/op	         0 db-waits/op	      3443 req/s	   20316 B/op	     250 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/parallel-8         	   20852	    116365 ns/op	         1.000 db-open-conns	    557315 db-wait-ns/op	         0.9999 db-waits/op	      8594 req/s	   20942 B/op	     252 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/parallel-8         	   20656	    111574 ns/op	         1.000 db-open-conns	    533350 db-wait-ns/op	         0.9999 db-waits/op	      8963 req/s	   20900 B/op	     252 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/parallel-8         	   20955	    113549 ns/op	         1.000 db-open-conns	    543072 db-wait-ns/op	         0.9998 db-waits/op	      8807 req/s	   20873 B/op	     252 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/parallel-8         	   22016	    110434 ns/op	         1.000 db-open-conns	    525753 db-wait-ns/op	         0.9999 db-waits/op	      9055 req/s	   20871 B/op	     252 allocs/op
+BenchmarkRestServerSQLite/serialized-transactional-update/parallel-8         	   22184	    112138 ns/op	         1.000 db-open-conns	    534660 db-wait-ns/op	         0.9999 db-waits/op	      8918 req/s	   20824 B/op	     252 allocs/op

@@ -137,6 +137,8 @@ expression (or `unmatched`) and unsupported methods are labeled `OTHER`.
 See the [configuration model](docs/architecture.md#configuration-model) for exact namespaces
 and inherited `go-ctx` source precedence. Upgrade behavior is summarized in the
 [architecture-remediation migration guide](docs/migration-architecture-remediation.md).
+The reproducible HTTP and SQLite loopback benchmarks and their machine-specific throughput
+results are in the [performance baseline](docs/performance.md).
 
 ## License
 Apache 2.0 - See [LICENCE](LICENCE) for details
