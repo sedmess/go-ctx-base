@@ -5,6 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/glebarez/sqlite"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sedmess/go-ctx/ctx"
@@ -14,10 +20,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	glogger "gorm.io/gorm/logger"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
 const dbSqlitePathKey = "DB_SQLITE_PATH"
@@ -71,9 +73,7 @@ type connection struct {
 	rootContext context.Context `ctx:"context"`
 	logger      logger.Logger
 
-	mu         sync.Mutex
-	generation *connectionGeneration
-	lastClose  error
+	generation atomic.Pointer[connectionGeneration]
 	registerer prometheus.Registerer
 }
 
@@ -84,19 +84,15 @@ type connectionGeneration struct {
 	cancel     context.CancelFunc
 	collector  prometheus.Collector
 	registerer prometheus.Registerer
-	closing    bool
 	closeOnce  sync.Once
 	closeErr   error
 	closed     chan struct{}
 }
 
 func (instance *connection) Init() error {
-	instance.mu.Lock()
-	if instance.generation != nil {
-		instance.mu.Unlock()
+	if generation := instance.generation.Load(); generation != nil && !generation.isClosed() {
 		return fmt.Errorf("database %q is already initialized", instance.name)
 	}
-	instance.mu.Unlock()
 
 	instance.logger = logger.New(instance.name)
 
@@ -193,15 +189,10 @@ func (instance *connection) Init() error {
 		closed:     make(chan struct{}),
 	}
 
-	instance.mu.Lock()
-	if instance.generation != nil {
-		instance.mu.Unlock()
-		generation.close()
-		return fmt.Errorf("database %q is already initialized", instance.name)
-	}
-	instance.generation = generation
-	instance.lastClose = nil
-	instance.mu.Unlock()
+	// go-ctx serializes Init and starts a new application only after the previous
+	// Stop().Join(). The completed generation remains attached until this point,
+	// and atomic publication keeps operational readers safe at the restart boundary.
+	instance.generation.Store(generation)
 
 	return nil
 }
@@ -302,31 +293,11 @@ func (instance *connection) Dispose() error {
 }
 
 func (instance *connection) closeConnection() error {
-	instance.mu.Lock()
-	generation := instance.generation
+	generation := instance.generation.Load()
 	if generation == nil {
-		err := instance.lastClose
-		instance.mu.Unlock()
-		return err
+		return nil
 	}
-	if generation.closing {
-		closed := generation.closed
-		instance.mu.Unlock()
-		<-closed
-		return generation.closeErr
-	}
-	generation.closing = true
-	instance.mu.Unlock()
-
-	err := generation.close()
-
-	instance.mu.Lock()
-	if instance.generation == generation {
-		instance.generation = nil
-		instance.lastClose = err
-	}
-	instance.mu.Unlock()
-	return err
+	return generation.close()
 }
 
 func (generation *connectionGeneration) close() error {
@@ -341,17 +312,30 @@ func (generation *connectionGeneration) close() error {
 	return generation.closeErr
 }
 
+func (generation *connectionGeneration) isClosed() bool {
+	select {
+	case <-generation.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 func (instance *connection) activeGeneration() (*connectionGeneration, error) {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
-	if instance.generation == nil || instance.generation.closing {
+	generation := instance.generation.Load()
+	if generation == nil || generation.isClosed() {
 		return nil, fmt.Errorf("database %q is not active", instance.name)
 	}
-	return instance.generation, nil
+	if err := generation.context.Err(); err != nil {
+		return nil, fmt.Errorf("database %q is not active: %w", instance.name, err)
+	}
+	return generation, nil
 }
 
 // CloseConnection closes a manually owned built-in connection. Container-managed connections
-// invoke the same idempotent operation automatically during shutdown and disposal.
+// invoke the same idempotent operation automatically during shutdown and disposal. Close calls
+// may be repeated or concurrent. Manual Init and close phases remain serialized; operational
+// calls may overlap a completed-generation restart and observe either inactive or fresh state.
 func CloseConnection(connection Connection) error {
 	if connection == nil {
 		return errors.New("database connection is nil")

@@ -57,7 +57,7 @@ before readiness, roll back initialized siblings, and leave the address reusable
 ### Tests for User Story 1
 
 - [X] T004 [P] [US1] Add prefix/global/present-empty/port-zero listener tests plus self-subprocess duplicate-bind and sibling-rollback startup-failure tests in `httpserver/rest_server_test.go`
-- [X] T005 [US1] Add request-context cancellation, repeated/concurrent cleanup, persistent-versus-generation registration, invalid/duplicate route, and 100-generation restart tests in `httpserver/rest_server_test.go`
+- [X] T005 [US1] Add request-context cancellation, repeated framework-ordered cleanup, persistent-versus-generation registration, invalid/duplicate route, and 100-generation restart tests in `httpserver/rest_server_test.go`
 - [X] T006 [P] [US1] Add provisional-init rollback, normal stop, later-service failure disposal, manual/repeated `CloseConnection`, secret-safe failure, and cached-object restart tests in `db/db_connection_test.go`
 - [X] T007 [P] [US1] Extend pool-acquisition, active-query, caller-deadline, and connection-generation cancellation coverage in `db/session_context_test.go`
 - [X] T008 [P] [US1] Add exact nine-family `gorm_dbstats_*` descriptor/value tests plus unregister and same-name restart tests using an isolated serial registry in `db/metrics_test.go`
@@ -70,9 +70,9 @@ before readiness, roll back initialized siblings, and leave the address reusable
 
 - [X] T013 [P] [US1] Refactor `restServer.Init` in `httpserver/rest_server.go` to resolve the existing prefix/global configuration, create provisional per-run state, reserve the real TCP listener, and roll back locally on every initialization error
 - [X] T014 [US1] Complete generation-scoped route/middleware validation, `Serve` activation, request-context cancellation, five-second graceful stop, serve-worker join, idempotent `Dispose`, and restart cleanup in `httpserver/rest_server.go`
-- [X] T015 [P] [US1] Document and implement mutex-protected pool generations, caller-plus-generation context acquisition, provisional rollback, `BeforeStop`/`Dispose` cleanup, and additive `CloseConnection` without extending `Connection` in `db/db_connection.go`
+- [X] T015 [P] [US1] Document and implement mutex-free pool generations with serialized atomic publication, caller-plus-generation context acquisition, provisional rollback, generation-owned `BeforeStop`/`Dispose` cleanup, and additive concurrent-safe `CloseConnection` without extending `Connection` in `db/db_connection.go`
 - [X] T016 [P] [US1] Implement a lifecycle-neutral pull-time `sql.DB.Stats()` Prometheus collector preserving all nine names, gauge types, help meanings, and the `db_name` label in `db/metrics.go`
-- [X] T017 [US1] Register, publish, identity-check, unregister, and restart the pull-time collector with its owning pool generation in `db/db_connection.go`
+- [X] T017 [US1] Register, publish, unregister, complete, and restart the pull-time collector with its retained owning pool generation in `db/db_connection.go`
 - [X] T018 [US1] Remove the direct `gorm.io/plugin/prometheus` dependency only after the replacement collector is wired, then reconcile `go.mod` and `go.sum` without changing other dependency versions
 - [X] T019 [US1] Rework local and PostgreSQL locks into generation-owned close-once lease state machines, preserve provider keys/advisory SQL/error text, use buffered acquisition results and `Session.Tx` commit/rollback semantics, join leases before closing the exact-only scheduler connection, and add idempotent locker stop/disposal in `scheduler/execution_lockers.go`
 - [X] T020 [P] [US1] Document and add a fresh scheduler context per initialization, cancel-before-stop behavior, restart-safe state, and `ScheduleTaskCronContext(cron, key string, task func(context.Context))` while preserving existing methods in `scheduler/task_scheduler.go`

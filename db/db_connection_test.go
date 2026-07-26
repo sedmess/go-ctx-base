@@ -81,6 +81,9 @@ func TestConnectionLifecycleAndRestart(t *testing.T) {
 	if err := connection.Init(); err != nil {
 		t.Fatal(err)
 	}
+	if err := connection.Init(); err == nil {
+		t.Fatal("active generation was replaced")
+	}
 	if _, err := connection.Stats(); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +140,7 @@ func TestConnectionProvisionalInitializationRollback(t *testing.T) {
 		_ = provisional.Dispose()
 		t.Fatal("duplicate metric registration unexpectedly succeeded")
 	}
-	if provisional.generation != nil {
+	if provisional.generation.Load() != nil {
 		t.Fatal("failed provisional generation was published")
 	}
 	collector, ok := capture.collector.(*dbStatsCollector)
@@ -169,16 +172,13 @@ func TestConnectionProvisionalInitializationRollback(t *testing.T) {
 func TestConnectionNormalContainerStopClosesGeneration(t *testing.T) {
 	connection := newTestConnection(t, "normal-container-stop")
 	application := ctx.CreateContextualizedApplication(ctx.PackageOf(connection))
-	generation := connection.generation
+	generation := connection.generation.Load()
 	if generation == nil || generation.sqlDB == nil {
 		application.Stop().Join()
 		t.Fatal("container did not publish a database generation")
 	}
 	pool := generation.sqlDB
 	application.Stop().Join()
-	if connection.generation != nil {
-		t.Fatal("container stop retained the database generation")
-	}
 	if err := pool.PingContext(context.Background()); err == nil {
 		t.Fatal("container stop left the SQL pool usable")
 	}
@@ -249,6 +249,9 @@ func TestConnectionGenerationCancellation(t *testing.T) {
 	err := connection.Session(func(*Session) error { return nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("session error = %v", err)
+	}
+	if _, err := connection.Stats(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("stats error = %v", err)
 	}
 	if err := connection.Dispose(); err != nil {
 		t.Fatal(err)

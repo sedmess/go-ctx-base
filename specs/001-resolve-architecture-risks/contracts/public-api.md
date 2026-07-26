@@ -30,7 +30,7 @@ The concrete built-in server changes lifecycle behavior only:
 - initialization failure identifies the server and effective listen address through the existing go-ctx fatal startup boundary;
 - `AfterStart` serves an already reserved listener;
 - `BeforeStop` remains bounded by the existing five-second graceful shutdown window;
-- disposal and repeated stop are idempotent;
+- disposal and repeated cleanup across go-ctx's ordered `BeforeStop`/`Dispose` path are idempotent;
 - a completed generation can be initialized again on the same cached service object.
 
 Additive binding classification:
@@ -98,6 +98,9 @@ func CloseConnection(connection Connection) error
 
 - A connection returned by `NewConnection` closes its current pool and metric registration.
 - Repeated and concurrent calls are safe and return the stored close outcome.
+- Manual `Init` and close phases are serialized; a new `Init` begins only after the preceding
+  close call has returned. Operational calls may overlap the restart boundary and observe either
+  inactive or fresh state. go-ctx provides phase ordering for container-managed connections.
 - A nil connection or a custom implementation without the close capability returns a descriptive error.
 - Container-managed built-in connections invoke the same operation automatically through their lifecycle callbacks.
 

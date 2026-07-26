@@ -62,7 +62,7 @@ As a library consumer and maintainer, I can cancel or abandon asynchronous work 
 
 - A shared listener setting is supplied while multiple listener-based services are enabled, and no service-specific override is present.
 - Startup fails after one resource is acquired but before all services reach readiness.
-- Shutdown or unlock is requested more than once, including concurrently with cancellation or startup failure.
+- Application shutdown is requested more than once, including concurrently; or unlock is requested more than once while cancellation or release is in progress.
 - A lock context is canceled immediately before acquisition, immediately after acquisition, or while release is already in progress.
 - Database initialization fails after a connection resource is created but before it is published for use.
 - A diagnostic endpoint is changed from local-only to a wildcard, public, proxied, or otherwise externally reachable address.
@@ -85,7 +85,7 @@ Unrelated feature development, dependency upgrades, broad redesigns, and changes
 - **FR-002**: The system MUST detect when enabled services resolve to the same endpoint and MUST return an actionable startup error before the application is considered ready or left partially operational.
 - **FR-003**: Every database resource acquired by the system MUST have an explicit owner and MUST be released on normal shutdown, cancellation, initialization failure, and partial-startup rollback.
 - **FR-004**: Every scheduler lock acquired by the system MUST be released on explicit unlock, cancellation, execution failure, and service shutdown; cleanup MUST be safe to invoke repeatedly.
-- **FR-005**: Repeated and concurrent stop operations MUST be safe, bounded, and free of retained listener, database, lock, or background-work ownership.
+- **FR-005**: Repeated and concurrent application stop requests MUST be safe, bounded, and free of retained listener, database, lock, or background-work ownership. Service cleanup MUST remain idempotent across go-ctx's ordered `BeforeStop` and `Dispose` phases; direct concurrent invocation of one service's lifecycle callbacks is outside the go-ctx v0.12.0 contract.
 - **FR-006**: Operational diagnostic endpoints MUST be local-only by default; any non-local exposure MUST require an explicitly configured access-control policy and MUST fail closed when that policy is absent or invalid.
 - **FR-007**: Profiling requests with no duration MUST retain the existing 15-second default. Zero, negative, malformed, or greater-than-30-second durations MUST be rejected before work begins, and overlapping resource-exclusive profiling work MUST be refused with a bounded busy response.
 - **FR-008**: Every successful authentication method MUST expose a deterministic numeric credential compatible with the existing application-facing accessor, MUST produce the same value for the same accepted identity across process runs, and MUST NOT use raw secret material as that value. Every failed or absent authentication attempt MUST return the accessor's existing no-credential value.

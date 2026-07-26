@@ -92,7 +92,6 @@ type lockLease struct {
 	releaseOnce sync.Once
 	release     chan struct{}
 	done        chan struct{}
-	terminalMu  sync.Mutex
 	terminal    error
 }
 
@@ -107,15 +106,12 @@ func (lease *lockLease) signalRelease() {
 }
 
 func (lease *lockLease) finish(err error) {
-	lease.terminalMu.Lock()
 	lease.terminal = err
-	lease.terminalMu.Unlock()
+	// Closing done publishes terminal to every Unlock caller waiting on the channel.
 	close(lease.done)
 }
 
 func (lease *lockLease) result() error {
-	lease.terminalMu.Lock()
-	defer lease.terminalMu.Unlock()
 	return lease.terminal
 }
 

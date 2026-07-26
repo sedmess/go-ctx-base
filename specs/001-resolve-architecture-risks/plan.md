@@ -141,7 +141,7 @@ Controller route registration still happens during initialization through normal
 
 The server distinguishes persistent pre-initialization registrations from controller registrations made after the server dependency has initialized. Disposal clears only generation registrations, ensuring cached `Default` objects restart without route duplication while preserving deliberate one-time consumer setup.
 
-`BeforeStop` cancels the server request context, invokes the existing five-second graceful shutdown, and joins the serve worker. `Dispose` closes and joins again through generation-identity and close-once guards, covering later-service initialization failure and concurrent disposal without touching a new generation.
+`BeforeStop` cancels the server request context, invokes the existing five-second graceful shutdown, and joins the serve worker. `Dispose` closes and joins again through a close-once guard, covering later-service initialization failure without touching a new generation. No server lifecycle-state mutex is required: go-ctx v0.12.0 serializes lifecycle phases for one service and permits the cached instance's next generation only after `Stop().Join()`; disposal concurrency is across distinct services.
 
 ### 2. Control-Plane Access, Credentials, and Profiling
 
@@ -157,9 +157,9 @@ The route wrapper writes the registered `rest.Route.PathExp` into request-local 
 
 ### 4. Database Pool and Metric Generations
 
-The concrete connection retains `Init() error` to satisfy the existing public interface. An injected application context, or a background context for manual use, seeds a per-run generation. Initialization acquires GORM/SQL resources locally, applies settings, registers a per-generation Prometheus collector, and only then publishes state under a mutex. Any error unregisters/closes provisional state before return.
+The concrete connection retains `Init() error` to satisfy the existing public interface. An injected application context, or a background context for manual use, seeds a per-run generation. Initialization acquires GORM/SQL resources locally, applies settings, registers a per-generation Prometheus collector, and only then publishes state through an atomic pointer from the go-ctx-serialized `Init` phase. A prior completed generation remains attached until this publication, operational readers may safely observe either boundary state, and any setup error unregisters/closes provisional state before return.
 
-`BeforeStop`, `Dispose() error`, and additive `CloseConnection` converge on one identity-safe close path. It rejects new work, cancels the generation, unregisters the exact collector, atomically detaches the pool, and closes it once. Adding `BeforeStop` intentionally changes the database service descriptor's `isStopAware` flag to true; the service name and type remain unchanged.
+`BeforeStop`, `Dispose() error`, and additive `CloseConnection` converge on one generation-owned close path. A close-once guard cancels the generation to reject new work, unregisters the exact collector, closes the pool, and publishes completion. Concurrent close callers target the same retained generation and receive the same outcome without a connection-level mutex. Adding `BeforeStop` intentionally changes the database service descriptor's `isStopAware` flag to true; the service name and type remain unchanged.
 
 `SessionContext` combines caller and generation cancellation before calling GORM `WithContext(...).Connection`, covering pool wait and callback work. The compatibility `Session` uses the generation context. Health keeps its five-second query bound and sanitizes returned/logged errors.
 
@@ -190,7 +190,7 @@ Documentation updates occur only after implementation evidence exists. `docs/arc
 | Concern | Normal path | Initialization failure | Cancellation/shutdown | Repeated stop/restart |
 |---|---|---|---|---|
 | Listener | Init reserves; AfterStart serves | Failing initializer rolls back; prior server disposed | Request context canceled, five-second graceful shutdown, worker joined | Close is idempotent; fresh listener and generation registrations |
-| Default DB | Init publishes complete pool/collector | Provisional pool closes; prior initialized pool disposed | Consumer-before-dependency stop cancels and closes | State detaches atomically; same cached object opens anew |
+| Default DB | Serialized Init replaces only a completed generation with a complete pool/collector | Provisional pool closes; prior initialized pool disposed | Consumer-before-dependency stop cancels and closes | Completed state stays attached until the same cached object opens anew |
 | Scheduler DB/locks | Locker owns DB and leases | Locker rolls back its own DB; prior dependencies disposed | Scheduler stops, then locker cancels/joins/ closes | Fresh provider map/context/signals |
 | Streams | Producer closes after completion | Generator error delivered once when receivable | Shared context unblocks sends/receives and closes output | Each call owns a new operation |
 | Profiler | Valid admitted request captures | Invalid config/input starts no work | Client/server context stops timer/runtime capture and frees gate | Process gate reusable after every exit |

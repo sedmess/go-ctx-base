@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -76,5 +78,109 @@ func TestSessionContextObservesConnectionShutdown(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("session did not stop with connection")
+	}
+}
+
+func TestConnectionRejectsConcurrentStatsDuringClose(t *testing.T) {
+	connection := newTestConnection(t, "stats-shutdown")
+	if err := connection.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 32
+	ready := make(chan struct{}, workers)
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			first := true
+			for {
+				if _, err := connection.Stats(); err != nil {
+					return
+				}
+				if first {
+					ready <- struct{}{}
+					first = false
+				}
+				runtime.Gosched()
+			}
+		}()
+	}
+	for range workers {
+		<-ready
+	}
+
+	if err := CloseConnection(connection); err != nil {
+		t.Fatal(err)
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		waitGroup.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("statistics callers did not observe connection shutdown")
+	}
+	if _, err := connection.Stats(); err == nil {
+		t.Fatal("closed connection accepted statistics request")
+	}
+}
+
+func TestConnectionOperationsCanOverlapSerializedRestart(t *testing.T) {
+	connection := newTestConnection(t, "stats-restart")
+	if err := connection.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 32
+	ready := make(chan struct{}, workers)
+	stop := make(chan struct{})
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			_, _ = connection.Stats()
+			ready <- struct{}{}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_, _ = connection.Stats()
+					runtime.Gosched()
+				}
+			}
+		}()
+	}
+	for range workers {
+		<-ready
+	}
+
+	var stopOnce sync.Once
+	stopWorkers := func() {
+		stopOnce.Do(func() { close(stop) })
+		waitGroup.Wait()
+	}
+	defer stopWorkers()
+
+	for range 25 {
+		if err := CloseConnection(connection); err != nil {
+			t.Fatal(err)
+		}
+		runtime.Gosched()
+		if err := connection.Init(); err != nil {
+			t.Fatal(err)
+		}
+		runtime.Gosched()
+	}
+
+	stopWorkers()
+	if err := connection.Dispose(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -3,13 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/sedmess/go-ctx-base/db"
-	"github.com/sedmess/go-ctx-base/httpserver"
-	"github.com/sedmess/go-ctx-base/scheduler"
-	"github.com/sedmess/go-ctx-base/utils/channels"
-	"github.com/sedmess/go-ctx/ctx"
-	"github.com/sedmess/go-ctx/ctx/ctx_testing"
-	"github.com/sedmess/go-ctx/ctx/logger"
 	"io"
 	"net"
 	"net/http"
@@ -17,9 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/sedmess/go-ctx-base/db"
+	"github.com/sedmess/go-ctx-base/httpserver"
+	"github.com/sedmess/go-ctx-base/scheduler"
+	"github.com/sedmess/go-ctx-base/utils/channels"
+	"github.com/sedmess/go-ctx/ctx"
+	"github.com/sedmess/go-ctx/ctx/ctx_testing"
+	"github.com/sedmess/go-ctx/ctx/logger"
 )
 
 const (
@@ -82,8 +82,6 @@ func (s *messageServiceStub) GetMessages(string, int64) channels.StreamingChan[M
 	})
 }
 
-var rootTestingApplicationMu sync.Mutex
-
 func newRootTestingApplication() ctx_testing.TestingApplication {
 	return newRootTestingApplicationWithListeners(rootListenerAddresses{
 		base:     "127.0.0.1:0",
@@ -105,9 +103,6 @@ func newRootTestingApplicationWithListeners(addresses rootListenerAddresses) ctx
 }
 
 func runRootTestingApplication(runFn func() int) int {
-	rootTestingApplicationMu.Lock()
-	defer rootTestingApplicationMu.Unlock()
-
 	return newRootTestingApplication().Run(runFn)
 }
 
@@ -167,27 +162,23 @@ func runRootGenerationHelper() int {
 	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
 	defer transport.CloseIdleConnections()
 	for generation := 0; generation < rootGenerationCount; generation++ {
-		code := func() int {
-			rootTestingApplicationMu.Lock()
-			defer rootTestingApplicationMu.Unlock()
-			return newRootTestingApplicationWithListeners(addresses).Run(func() int {
-				probes := []struct {
-					address string
-					path    string
-				}{
-					{address: addresses.base, path: "/messages?to=readiness&since=0"},
-					{address: addresses.actuator, path: "/actuator/health"},
-					{address: addresses.profiler, path: "/profiler/named_profile?name=goroutine&debug=0"},
+		code := newRootTestingApplicationWithListeners(addresses).Run(func() int {
+			probes := []struct {
+				address string
+				path    string
+			}{
+				{address: addresses.base, path: "/messages?to=readiness&since=0"},
+				{address: addresses.actuator, path: "/actuator/health"},
+				{address: addresses.profiler, path: "/profiler/named_profile?name=goroutine&debug=0"},
+			}
+			for _, probe := range probes {
+				if err := waitForRootEndpoint(client, probe.address, probe.path); err != nil {
+					fmt.Fprintf(os.Stderr, "root generation %d: %v\n", generation, err)
+					return 1
 				}
-				for _, probe := range probes {
-					if err := waitForRootEndpoint(client, probe.address, probe.path); err != nil {
-						fmt.Fprintf(os.Stderr, "root generation %d: %v\n", generation, err)
-						return 1
-					}
-				}
-				return 0
-			})
-		}()
+			}
+			return 0
+		})
 		if code != 0 {
 			return code
 		}

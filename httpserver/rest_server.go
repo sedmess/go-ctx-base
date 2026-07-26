@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ant0ine/go-json-rest/rest"
-	"github.com/sedmess/go-ctx/ctx"
-	"github.com/sedmess/go-ctx/ctx/logger"
-	"github.com/sedmess/go-ctx/u"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"github.com/ant0ine/go-json-rest/rest"
+	"github.com/sedmess/go-ctx/ctx"
+	"github.com/sedmess/go-ctx/ctx/logger"
+	"github.com/sedmess/go-ctx/u"
 )
 
 const serverListenKey = "HTTP_LISTEN"
@@ -49,9 +49,10 @@ type RestServer interface {
 
 type Middleware func(chain rest.HandlerFunc, writer rest.ResponseWriter, request *rest.Request) error
 
+// go-ctx invokes this service's lifecycle phases serially within one application run
+// and permits restart only after Stop().Join(). Operational request state lives in the
+// immutable generation, so lifecycle fields do not need their own mutex.
 type restServer struct {
-	mu sync.Mutex
-
 	name    string
 	prefix  string
 	silent  bool
@@ -74,15 +75,12 @@ type restServerGeneration struct {
 	middlewares      []Middleware
 	routes           []*rest.Route
 	serveDone        chan struct{}
-	started          atomic.Bool
+	started          bool
 	stopOnce         sync.Once
 	stopErr          error
 }
 
 func (instance *restServer) Init() error {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
-
 	if instance.generation != nil {
 		return fmt.Errorf("http server %q is already initialized", instance.name)
 	}
@@ -136,14 +134,11 @@ func (instance *restServer) logger() logger.Logger {
 }
 
 func (instance *restServer) AddMiddleware(middleware Middleware) RestServer {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
-
 	if instance.generation == nil {
 		instance.persistentMiddlewares = append(instance.persistentMiddlewares, middleware)
 		return instance
 	}
-	if instance.generation.started.Load() {
+	if instance.generation.started {
 		panic(fmt.Sprintf("http server %q middleware registration after start", instance.name))
 	}
 	instance.generation.middlewares = append(instance.generation.middlewares, middleware)
@@ -151,10 +146,7 @@ func (instance *restServer) AddMiddleware(middleware Middleware) RestServer {
 }
 
 func (instance *restServer) registerRoute(route *rest.Route) {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
-
-	if instance.generation != nil && instance.generation.started.Load() {
+	if instance.generation != nil && instance.generation.started {
 		panic(fmt.Sprintf("http server %q route registration after start", instance.name))
 	}
 
@@ -176,14 +168,11 @@ func (instance *restServer) registerRoute(route *rest.Route) {
 }
 
 func (instance *restServer) AfterStart() {
-	instance.mu.Lock()
 	generation := instance.generation
 	if generation == nil {
-		instance.mu.Unlock()
 		panic(fmt.Sprintf("http server %q has not been initialized", instance.name))
 	}
-	if generation.started.Load() {
-		instance.mu.Unlock()
+	if generation.started {
 		return
 	}
 
@@ -210,8 +199,7 @@ func (instance *restServer) AfterStart() {
 		handler:        api.MakeHandler(),
 		maxRequestSize: generation.requestSizeLimit,
 	}
-	generation.started.Store(true)
-	instance.mu.Unlock()
+	generation.started = true
 
 	go func() {
 		defer close(generation.serveDone)
@@ -227,9 +215,7 @@ func (instance *restServer) AfterStart() {
 }
 
 func (instance *restServer) BeforeStop() {
-	instance.mu.Lock()
 	generation := instance.generation
-	instance.mu.Unlock()
 	if generation == nil {
 		return
 	}
@@ -239,26 +225,22 @@ func (instance *restServer) BeforeStop() {
 }
 
 func (instance *restServer) Dispose() error {
-	instance.mu.Lock()
 	generation := instance.generation
-	instance.mu.Unlock()
 	if generation == nil {
 		return nil
 	}
 
 	err := instance.stopGeneration(generation)
-	instance.mu.Lock()
 	if instance.generation == generation {
 		instance.generation = nil
 	}
-	instance.mu.Unlock()
 	return err
 }
 
 func (instance *restServer) stopGeneration(generation *restServerGeneration) error {
 	generation.stopOnce.Do(func() {
 		generation.cancelRequests()
-		if generation.started.Load() {
+		if generation.started {
 			timeoutContext, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
 			generation.stopErr = generation.server.Shutdown(timeoutContext)
 			cancelFunc()
@@ -301,8 +283,6 @@ func (instance *restServer) newAPI() *rest.Api {
 }
 
 func (instance *restServer) boundAddress() (net.Addr, bool) {
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
 	if instance.generation == nil || instance.generation.listener == nil {
 		return nil, false
 	}

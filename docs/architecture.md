@@ -45,8 +45,10 @@ The inherited rules most relevant here are:
    `CTX` is reserved, and reflected services are pointers to structs.
 2. `ctx` fields inject services, loggers, the application context, or the root context. `env`
    fields inject typed configuration.
-3. `AfterStart` callbacks are concurrent and have no ordering guarantee. `BeforeStop` callbacks
-   are sequential in consumer-before-dependency order. Disposal is concurrent.
+3. `AfterStart` callbacks for different services are concurrent and have no ordering guarantee.
+   `BeforeStop` callbacks are sequential in consumer-before-dependency order. Disposal callbacks
+   for different services are concurrent, but each selected lifecycle callback is invoked once
+   per service per run and lifecycle phases do not overlap for that service.
 4. `Application.Stop` is immediate and idempotent. `Application.Join` waits for all framework-
    owned shutdown work.
 5. Global lookup is designed for one active application context per process. Restart after a
@@ -131,7 +133,8 @@ The runtime sequence is:
 2. `go-ctx` resolves dependencies and injects `ctx` and `env` fields.
 3. Adapter `Init` methods construct provisional resource generations, reserve HTTP listeners, and
    register routes or scheduled jobs. A local failure disposes provisional state before returning.
-4. Concurrent `AfterStart` callbacks serve the already reserved listeners and start the scheduler.
+4. Concurrent per-service `AfterStart` callbacks serve the already reserved listeners and start
+   the scheduler.
 5. The application serves until explicit stop or a catchable process signal.
 6. Dependency-ordered `BeforeStop` callbacks stop the scheduler and gracefully shut down HTTP
    servers before framework cancellation and disposal complete.
@@ -182,9 +185,11 @@ The built-in server resolves configuration and reserves its real TCP listener du
 initialization. Controllers register validated typed or raw handlers before `AfterStart`, which
 freezes the generation route set and calls `Serve` on the reserved listener. Shutdown first cancels
 the generation request context, then uses the existing five-second graceful bound and joins the
-serve worker. Disposal repeats cleanup safely for initialization rollback, later-service failure,
-and restart. Persistent pre-initialization routes and middleware survive; generation registrations
-do not accumulate.
+serve worker. `go-ctx` serializes the server's lifecycle phases, so its generation pointer and
+registration phase need no service-state mutex; the close-once guard keeps the normal
+`BeforeStop`/`Dispose` cleanup path idempotent. Disposal also covers initialization rollback,
+later-service failure, and restart. Persistent pre-initialization routes and middleware survive;
+generation registrations do not accumulate.
 
 Authentication middleware controls access and stores a request-scoped Murmur3-derived `int64`
 identity. Bearer retains its established value; Basic now derives the same numeric representation
@@ -201,8 +206,11 @@ Each SQL connection pool, generation context, and Prometheus registration is pub
 as one lifecycle unit. `SessionContext` combines caller and generation cancellation before pool
 acquisition. The nine `gorm_dbstats_*` values are pulled from `sql.DB.Stats()` at scrape time, so no
 refresh worker survives a pool. `CloseConnection` is additive for manual owners; container-managed
-instances call the same idempotent cleanup automatically. Models, schema migration policy, and
-domain queries remain consumer responsibilities.
+instances call the same idempotent cleanup automatically. The completed generation remains attached
+until the next go-ctx-serialized `Init`; atomic generation publication, the generation context,
+the close-once guard, and the completion signal make restart observation, operational shutdown,
+and concurrent manual close safe without a connection-level mutex. Models, schema migration
+policy, and domain queries remain consumer responsibilities.
 
 ### Scheduler and locks
 

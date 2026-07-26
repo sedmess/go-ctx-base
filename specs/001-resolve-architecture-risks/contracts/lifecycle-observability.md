@@ -15,7 +15,13 @@
 | Scheduled context-aware job | Scheduler generation | Job execution | Scheduler cancels generation before `Stop` waits | Scheduler disposal repeats stop safely | Fresh scheduler/context |
 | Stream producer goroutine | Context-aware stream operation | Constructor/transform call | Generator completion or operation cancellation | Producer closes output exactly once | New operation per call |
 | Runtime profile/trace | Process-wide profiler gate plus request | Valid admitted request | Completion or request/server cancellation | Deferred runtime stop and gate release | Gate remains reusable |
-| DB metric series | Active connection generation | Successful pool publication | Unregister during close | Identity-safe unregister during rollback/disposal | Same names may register for new pool |
+| DB metric series | Active connection generation | Successful pool publication | Unregister during close | Generation-owned unregister during rollback/disposal | Same names may register after completed cleanup |
+
+Lifecycle concurrency in this table follows go-ctx v0.12.0: callbacks for distinct services may
+run concurrently, but the framework invokes one callback per service in each phase and completes
+one phase before entering the next. Synchronization is therefore required only where lifecycle
+state overlaps operational callers or cross-service resources; repeated cleanup across
+`BeforeStop` and `Dispose` remains idempotent.
 
 ## Database Behavior
 
@@ -25,9 +31,16 @@
 2. Open GORM and obtain the underlying SQL pool into local provisional variables.
 3. Apply pool settings and create the pull-time metric registration.
 4. If any step fails, unregister metrics and close the provisional pool before returning.
-5. Publish the complete generation atomically.
+5. Publish the complete generation through an atomic pointer from serialized `Init`, replacing
+   only a prior generation whose cleanup-completion signal is already closed.
 
 An operation attempted before initialization, after close, or while a generation is rejecting new work returns a descriptive error rather than dereferencing absent state.
+
+The connection retains its completed generation until the next serialized initialization.
+Concurrent `CloseConnection` callers therefore converge on that generation's close-once guard and
+completion signal without mutating the service's generation pointer during shutdown. Operational
+readers may overlap the atomic restart publication and observe either inactive completed state or
+fresh active state.
 
 ### Context Propagation
 
@@ -53,7 +66,7 @@ gorm_dbstats_max_lifetime_closed
 gorm_dbstats_max_idletime_closed
 ```
 
-Values are read from `sql.DB.Stats()` during Prometheus collection. There is no refresh ticker or connection-owned metrics goroutine. A closed generation disappears from collection, and the same connection name can register again only after identity-safe removal of the prior generation.
+Values are read from `sql.DB.Stats()` during Prometheus collection. There is no refresh ticker or connection-owned metrics goroutine. A closed generation disappears from collection, and the same connection name can register again only after generation-owned removal and completed cleanup of the prior registration.
 
 ## Scheduler and Lock Behavior
 

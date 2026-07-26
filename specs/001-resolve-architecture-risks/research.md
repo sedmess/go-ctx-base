@@ -12,7 +12,7 @@ All material research questions are resolved. The decisions below preserve the p
 
 Fallible validation and resource acquisition belong in one error-returning `Init` variant. `AfterStart` only activates resources that were validated and acquired successfully. `BeforeStop` quiesces consumers in dependency-safe order, and idempotent `Dispose` cleanup covers normal shutdown and cleanup after a later service fails to initialize.
 
-**Rationale**: In v0.12.0, initialization errors are propagated before global publication, while `AfterStart` callbacks run concurrently and cannot return errors. A failed startup skips `BeforeStop`, cancels the root context, and disposes only services whose initialization completed. The initializer that returns an error must therefore roll back its own provisional resources. Normal `BeforeStop` is consumer-before-dependency; disposal is concurrent. `Stop` is immediate and idempotent, and `Join` is the cleanup barrier.
+**Rationale**: In v0.12.0, initialization errors are propagated before global publication, while `AfterStart` callbacks for distinct services run concurrently and cannot return errors. A failed startup skips `BeforeStop`, cancels the root context, and disposes only services whose initialization completed. The initializer that returns an error must therefore roll back its own provisional resources. Normal `BeforeStop` is consumer-before-dependency; disposal is concurrent across distinct services, with one callback per service after the preceding lifecycle phase completes. `Stop` is immediate and idempotent, and `Join` is the cleanup barrier.
 
 `Default` packages cache service objects with `sync.OnceValue`, so the same server, database, scheduler, and controller instances must support a fresh lifecycle generation after `Stop().Join()`.
 
@@ -107,7 +107,7 @@ The server supplies request contexts derived from a per-run server context and c
 
 ## Decision 7: Make Database Pools Lifecycle-Owned and Pull Metrics at Scrape Time
 
-**Decision**: Leave the exported `db.Connection` interface unchanged. Implement a restartable, mutex-protected lifecycle generation on the concrete connection, plus an additive `CloseConnection(Connection) error` helper for manually owned connections. `BeforeStop` cancels and closes the current generation in dependency order; `Dispose` repeats the same idempotent cleanup for failed-start and final cleanup. A failing initializer closes all provisional resources before returning.
+**Decision**: Leave the exported `db.Connection` interface unchanged. Implement a restartable lifecycle generation on the concrete connection without a service mutex, plus an additive `CloseConnection(Connection) error` helper for manually owned connections. The completed generation remains attached until the next serialized `Init`; an atomic pointer keeps operational reads safe across publication, generation cancellation rejects new work, `sync.Once` converges repeated/concurrent close calls, and a completion channel gates restart. `BeforeStop` cancels and closes the current generation in dependency order; `Dispose` repeats the same idempotent cleanup for failed-start and final cleanup. A failing initializer closes all provisional resources before returning.
 
 `SessionContext` calls `db.WithContext(callerContext).Connection(...)` so cancellation covers pool acquisition as well as the later query. The effective operation context also observes connection-generation shutdown without replacing the caller's deadline.
 

@@ -44,7 +44,8 @@ bound/serving
 
 - No serving goroutine starts before a listener is bound successfully.
 - A generation owns at most one listener and one serving goroutine.
-- Stop, disposal, and concurrent cleanup cannot close a later generation's listener.
+- Framework-ordered stop and disposal cannot close a later generation's listener; a later
+  generation starts only after the preceding application's `Stop().Join()` completes.
 - Port `0` values are never rejected merely because their configured strings match.
 - Routes and middleware are frozen for the serving generation before traffic is accepted.
 
@@ -62,26 +63,33 @@ Represents one GORM and `database/sql` pool generation owned by a connection ser
 | GORM handle | Query/session facade | Published only after complete setup |
 | SQL pool | Owned external resource | Closed once per generation |
 | Generation context | Shutdown signal combined with caller contexts | Never replaces a caller deadline or cancellation |
-| Metric registration | Identity-safe registration of pull-time pool statistics | Removed only if it still points to this generation |
-| Lifecycle state | Current generation phase | Protected against repeated/concurrent cleanup |
+| Metric registration | Generation-owned registration of pull-time pool statistics | Removed before that generation publishes cleanup completion |
+| Lifecycle state | Current generation phase | Atomic generation publication, generation cancellation, close-once guard, and one-way completion signal; no service mutex |
 
 ### State Transitions
 
 ```text
-dormant
+uninitialized
   -> opening
       -> active
           -> rejecting-new-work
               -> closing
                   -> closed
-                      -> dormant (next Init)
-      -> closed (initialization rollback)
+                      -> opening (next serialized Init replaces the completed generation)
+      -> uninitialized (first setup failure after provisional rollback)
+      -> closed (restart setup failure retains the completed generation)
 ```
 
 ### Invariants
 
 - Provisional pools are closed if the connection's own initializer fails.
 - `BeforeStop`, `Dispose`, and `CloseConnection` converge on one idempotent close operation.
+- A completed generation remains attached until a serialized later `Init` replaces it after the
+  cleanup-completion signal.
+- Concurrent initialization is outside the go-ctx contract; restart begins only after
+  `Stop().Join()`.
+- Operational readers may overlap atomic restart publication and observe either the completed
+  generation as inactive or the fresh active generation.
 - Context-aware pool acquisition and queries observe both caller cancellation and generation shutdown.
 - No polling goroutine is required to expose database statistics.
 - Metric names and the `db_name` label remain stable across generations.

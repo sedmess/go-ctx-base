@@ -83,9 +83,14 @@ Base adapters MUST preserve the pinned framework behavior:
   `CTX` is reserved, and reflected services are pointers to structs.
 - Route and middleware registration occurs during initialization, before the HTTP server's
   `AfterStart` callback freezes the active router.
-- `AfterStart` callbacks are concurrent. Never depend on their order.
+- `AfterStart` callbacks for different services are concurrent. Never depend on their order.
 - `BeforeStop` is consumer-before-dependency. Do not invert that dependency-safe order.
-- Disposal may be concurrent. Shared cleanup must be synchronized and idempotent.
+- Disposal callbacks for different services may be concurrent. The framework invokes each
+  lifecycle callback once per service per run and does not overlap lifecycle phases for that
+  service. Do not add a mutex solely to serialize its own lifecycle callbacks.
+- Cleanup reached through both `BeforeStop` and `Dispose` must remain idempotent. Synchronize
+  state that is also accessed by request handlers, jobs, workers, public concurrent methods, or
+  other services.
 - `Application.Stop` is immediate and idempotent; `Join` waits for framework-owned cleanup.
 - Configuration is lazy. Register defaults before the first lookup.
 - Typed service lookup returns `(zero, false)` for ordinary absence; always check the boolean.

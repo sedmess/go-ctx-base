@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -297,16 +296,12 @@ func TestRestServerCancelsRequestsAndCleanupIsIdempotent(t *testing.T) {
 		t.Fatal("request did not start")
 	}
 
-	var cleanup sync.WaitGroup
+	server.BeforeStop()
 	for index := 0; index < 8; index++ {
-		cleanup.Add(1)
-		go func() {
-			defer cleanup.Done()
-			server.BeforeStop()
-			_ = server.Dispose()
-		}()
+		if err := server.Dispose(); err != nil {
+			t.Fatalf("repeated cleanup %d: %v", index, err)
+		}
 	}
-	cleanup.Wait()
 
 	select {
 	case err := <-finished:
