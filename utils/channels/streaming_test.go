@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -296,5 +297,94 @@ func TestContextBufferedCapacity(t *testing.T) {
 	values, err := stream.CollectToSliceContext(operationContext)
 	if err != nil || !reflect.DeepEqual(values, []int{1, 2, 3}) {
 		t.Fatalf("context buffered values = %v, %v", values, err)
+	}
+}
+
+func TestGenericMethodResultsPreserveTypeAndOrder(t *testing.T) {
+	var mapped StreamingChan[string] = SliceToChannel([]int{1, 2, 3}).Map(strconv.Itoa)
+	values, err := mapped.CollectToSlice()
+	if err != nil || !reflect.DeepEqual(values, []string{"1", "2", "3"}) {
+		t.Fatalf("typed map = %v, %v", values, err)
+	}
+
+	var flattened StreamingChan[string] = SliceToChannel([]int{1, 2}).FlatMap(
+		func(value int) StreamingChan[string] {
+			return SliceToChannel([]string{strconv.Itoa(value), strconv.Itoa(value * 10)})
+		},
+	)
+	values, err = flattened.CollectToSlice()
+	if err != nil || !reflect.DeepEqual(values, []string{"1", "10", "2", "20"}) {
+		t.Fatalf("typed flat-map = %v, %v", values, err)
+	}
+}
+
+func TestGenericMethodReferencesAndAnyResult(t *testing.T) {
+	explicitSource := SingleElemChannel(4)
+	contextualSource := SingleElemChannel(5)
+	mapValue := explicitSource.Map[string]
+	var contextualValue func(func(int) string) StreamingChan[string] = contextualSource.Map
+	mapExpression := StreamingChan[int].Map[string]
+
+	for name, stream := range map[string]StreamingChan[string]{
+		"explicit value":      mapValue(strconv.Itoa),
+		"contextual value":    contextualValue(strconv.Itoa),
+		"explicit expression": mapExpression(SingleElemChannel(6), strconv.Itoa),
+	} {
+		values, err := stream.CollectToSlice()
+		if err != nil || len(values) != 1 {
+			t.Fatalf("%s = %v, %v", name, values, err)
+		}
+	}
+
+	var anyStream StreamingChan[any] = SingleElemChannel(7).Map(func(value int) any {
+		return strconv.Itoa(value)
+	})
+	values, err := anyStream.CollectToSlice()
+	if err != nil || !reflect.DeepEqual(values, []any{"7"}) {
+		t.Fatalf("any map = %v, %v", values, err)
+	}
+}
+
+func TestGenericMethodsPreserveEmptyErrorAndCancellation(t *testing.T) {
+	empty, err := SliceToChannel([]int{}).Map(strconv.Itoa).CollectToSlice()
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty map = %v, %v", empty, err)
+	}
+
+	sourceError := errors.New("source failed")
+	if _, err := SingleElemChannelErr(0, sourceError).Map(strconv.Itoa).CollectToSlice(); !errors.Is(err, sourceError) {
+		t.Fatalf("source error = %v", err)
+	}
+
+	nestedError := errors.New("nested failed")
+	if _, err := SingleElemChannel(1).FlatMap(func(int) StreamingChan[string] {
+		return SingleElemChannelErr("", nestedError)
+	}).CollectToSlice(); !errors.Is(err, nestedError) {
+		t.Fatalf("nested error = %v", err)
+	}
+
+	operationContext, cancel := context.WithCancel(context.Background())
+	mapped := SliceToChannelContext(operationContext, []int{1, 2, 3}).Map(strconv.Itoa)
+	if element := <-mapped; element.Data() != "1" {
+		t.Fatalf("first mapped value = %q", element.Data())
+	}
+	cancel()
+	waitForStreamClose(t, mapped)
+}
+
+func TestFlatMapPackageNamesAreEquivalent(t *testing.T) {
+	mapper := func(value int) StreamingChan[string] {
+		return SingleElemChannel(strconv.Itoa(value))
+	}
+	canonical, err := FlatMap(SliceToChannel([]int{1, 2}), mapper).CollectToSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := FlapMap(SliceToChannel([]int{1, 2}), mapper).CollectToSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canonical, legacy) {
+		t.Fatalf("FlatMap = %v, FlapMap = %v", canonical, legacy)
 	}
 }

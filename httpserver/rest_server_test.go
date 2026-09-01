@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,21 @@ func newLifecycleTestServer(t *testing.T, name string) *restServer {
 	server := NewRestServerSilent(name, prefix, 0).(*restServer)
 	server.l = logger.New(name)
 	return server
+}
+
+func unsetTestEnvironment(t *testing.T, key string) {
+	t.Helper()
+	value, present := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv(key, value)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	})
 }
 
 func testServerURL(t *testing.T, server *restServer, path string) string {
@@ -315,5 +331,128 @@ func TestRestServerCancelsRequestsAndCleanupIsIdempotent(t *testing.T) {
 	case <-requestDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("request client did not return")
+	}
+}
+
+func TestHeaderValueCountConfiguration(t *testing.T) {
+	const key = "HTTP_MAX_HEADER_VALUE_COUNT"
+
+	t.Run("default", func(t *testing.T) {
+		unsetTestEnvironment(t, key)
+		server := newLifecycleTestServer(t, "header-count-default")
+		unsetTestEnvironment(t, "HEADER_COUNT_DEFAULT_"+key)
+		if err := server.Init(); err != nil {
+			t.Fatal(err)
+		}
+		defer server.Dispose()
+		if got := server.generation.server.MaxHeaderValueCount; got != http.DefaultMaxHeaderValueCount {
+			t.Fatalf("default header value count = %d, want %d", got, http.DefaultMaxHeaderValueCount)
+		}
+	})
+
+	t.Run("namespaced value wins", func(t *testing.T) {
+		t.Setenv(key, "19")
+		server := newLifecycleTestServer(t, "header-count-prefixed")
+		t.Setenv("HEADER_COUNT_PREFIXED_"+key, "17")
+		if err := server.Init(); err != nil {
+			t.Fatal(err)
+		}
+		defer server.Dispose()
+		if got := server.generation.server.MaxHeaderValueCount; got != 17 {
+			t.Fatalf("namespaced header value count = %d", got)
+		}
+	})
+
+	t.Run("global fallback remains", func(t *testing.T) {
+		t.Setenv(key, "23")
+		server := newLifecycleTestServer(t, "header-count-fallback")
+		unsetTestEnvironment(t, "HEADER_COUNT_FALLBACK_"+key)
+		if err := server.Init(); err != nil {
+			t.Fatal(err)
+		}
+		defer server.Dispose()
+		if got := server.generation.server.MaxHeaderValueCount; got != 23 {
+			t.Fatalf("global header value count = %d", got)
+		}
+	})
+
+	for _, value := range []string{"0", "-1"} {
+		t.Run("non-positive "+value, func(t *testing.T) {
+			server := newLifecycleTestServer(t, "header-count-non-positive")
+			t.Setenv("HEADER_COUNT_NON_POSITIVE_"+key, value)
+			err := server.Init()
+			if err == nil || !strings.Contains(err.Error(), key) || server.generation != nil {
+				t.Fatalf("non-positive header value count %q = %v, generation=%v", value, err, server.generation)
+			}
+		})
+	}
+
+	t.Run("malformed", func(t *testing.T) {
+		server := newLifecycleTestServer(t, "header-count-malformed")
+		t.Setenv("HEADER_COUNT_MALFORMED_"+key, "not-an-integer")
+		defer func() {
+			if panicValue := recover(); panicValue == nil || !strings.Contains(fmt.Sprint(panicValue), key) {
+				t.Fatalf("malformed header value count panic = %v", panicValue)
+			}
+			if server.generation != nil {
+				t.Fatal("malformed header count published a generation")
+			}
+		}()
+		_ = server.Init()
+	})
+}
+
+func TestHeaderValueCountRejectsBeforeHandler(t *testing.T) {
+	server := newLifecycleTestServer(t, "header-count-request")
+	t.Setenv("HEADER_COUNT_REQUEST_HTTP_MAX_HEADER_VALUE_COUNT", "15")
+	if err := server.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Dispose()
+
+	var handled atomic.Bool
+	RegisterRoute(server, http.MethodGet, "/header-count").Handler(func(*RequestData) (response Response) {
+		handled.Store(true)
+		response.Ok()
+		return
+	})
+	server.AfterStart()
+
+	commaRequest, err := http.NewRequest(http.MethodGet, testServerURL(t, server, "/header-count"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commaValues := make([]string, 16)
+	for index := range commaValues {
+		commaValues[index] = fmt.Sprintf("value-%d", index)
+	}
+	commaRequest.Header.Set("X-Comma-Separated", strings.Join(commaValues, ", "))
+	commaResponse, err := (&http.Client{Timeout: 2 * time.Second}).Do(commaRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = commaResponse.Body.Close()
+	if commaResponse.StatusCode != http.StatusOK || !handled.Load() {
+		t.Fatalf("comma-separated request status/handled = %d/%t", commaResponse.StatusCode, handled.Load())
+	}
+
+	handled.Store(false)
+	request, err := http.NewRequest(http.MethodGet, testServerURL(t, server, "/header-count"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 16 {
+		request.Header.Add("X-Repeated", fmt.Sprintf("value-%d", index))
+	}
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusRequestHeaderFieldsTooLarge {
+		t.Fatalf("over-limit status = %d", response.StatusCode)
+	}
+	if handled.Load() {
+		t.Fatal("over-limit request reached application handler")
 	}
 }

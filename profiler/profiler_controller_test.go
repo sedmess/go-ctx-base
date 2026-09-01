@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -245,6 +246,33 @@ func TestProfilerRoutesAndTokenPolicy(t *testing.T) {
 		if status != http.StatusBadRequest || len(body) != 0 {
 			t.Fatalf("%s status/body = %d/%d", path, status, len(body))
 		}
+	}
+}
+
+func TestProfilerGoroutineLeakProfile(t *testing.T) {
+	if profile := pprof.Lookup("goroutineleak"); profile == nil {
+		t.Fatal("Go 1.27 goroutineleak profile is unavailable")
+	}
+	name, debug, err := parseNamedProfile(url.Values{"name": {"goroutineleak"}, "debug": {"0"}})
+	if err != nil || name != "goroutineleak" || debug != 0 {
+		t.Fatalf("goroutineleak parsing = %q/%d, %v", name, debug, err)
+	}
+
+	tokens := "goroutine-leak-token"
+	baseURL := startProfilerApplication(t, &tokens)
+	path := "/profiler/named_profile?name=goroutineleak&debug=0"
+	if status, _, _ := requestProfile(t, baseURL, path, ""); status != http.StatusUnauthorized {
+		t.Fatalf("missing-token status = %d", status)
+	}
+	status, header, body := requestProfile(t, baseURL, path, tokens)
+	if status != http.StatusOK || len(body) == 0 {
+		t.Fatalf("goroutineleak status/body = %d/%d", status, len(body))
+	}
+	if disposition := header.Get("Content-Disposition"); disposition != "attachment; filename=\"goroutineleak.pprof\"" {
+		t.Fatalf("goroutineleak content disposition = %q", disposition)
+	}
+	if contentType := header.Get("Content-Type"); contentType != "application/octet-stream" {
+		t.Fatalf("goroutineleak content type = %q", contentType)
 	}
 }
 

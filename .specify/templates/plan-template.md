@@ -18,9 +18,9 @@ the execution workflow.
   Unresolved material choices must be marked NEEDS CLARIFICATION and resolved in research.
 -->
 
-**Language/Version**: Go 1.26 or NEEDS CLARIFICATION for an approved baseline change
+**Language/Version**: Go 1.27 or NEEDS CLARIFICATION for an approved baseline change
 
-**Primary Dependencies**: github.com/sedmess/go-ctx v0.12.0 plus affected adapter dependencies
+**Primary Dependencies**: github.com/sedmess/go-ctx v0.12.1 plus affected adapter dependencies
 
 **Storage**: SQLite/PostgreSQL through `db` and GORM, or N/A
 

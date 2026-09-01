@@ -45,7 +45,7 @@ testable. Cross-cutting architecture gates belong in Setup, Foundational, or Pol
 
 - [ ] T001 Confirm affected package paths and public contracts in specs/[###-feature-name]/plan.md
 - [ ] T002 [P] Add shared test fixtures in path/to/fixture_test.go
-- [ ] T003 [P] Update dependency or tool configuration in go.mod when explicitly planned
+- [ ] T003 [P] Verify the Go 1.27 and pinned framework baseline in go.mod when explicitly planned
 
 ---
 

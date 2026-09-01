@@ -1,7 +1,7 @@
 # go-ctx-base Architecture
 
-This document describes the repository architecture as implemented and reviewed on
-2026-07-22. The [project constitution](../.specify/memory/constitution.md) defines mandatory
+This document describes the repository architecture as implemented and reviewed through
+2026-09-01. The [project constitution](../.specify/memory/constitution.md) defines mandatory
 engineering constraints; this guide maps them to packages, runtime behavior, configuration,
 and current risks.
 
@@ -17,8 +17,8 @@ composition root. The root `app_example.go` demonstrates that assembly model.
 
 The current compatibility baseline is:
 
-- Go 1.26 or later;
-- `github.com/sedmess/go-ctx` v0.12.0;
+- Go 1.27 or later;
+- `github.com/sedmess/go-ctx` v0.12.1;
 - one active `go-ctx` application context per process;
 - SQLite or PostgreSQL through GORM;
 - HTTP through `go-json-rest` and `net/http`;
@@ -26,7 +26,7 @@ The current compatibility baseline is:
 - structured logging through `slog`;
 - metrics through Prometheus.
 
-## Framework Foundation: go-ctx v0.12.0
+## Framework Foundation: go-ctx v0.12.1
 
 `go-ctx` is the architecture kernel, not merely a helper dependency. This repository inherits
 its public contracts for service registration, dependency injection, environment loading,
@@ -34,9 +34,9 @@ health, statistics, lifecycle, and testing.
 
 The version-matched framework references are:
 
-- [go-ctx v0.12.0 README](https://github.com/sedmess/go-ctx/blob/v0.12.0/readme.md)
-- [go-ctx v0.12.0 architecture](https://github.com/sedmess/go-ctx/blob/v0.12.0/docs/architecture.md)
-- [go-ctx v0.12.0 migration guide](https://github.com/sedmess/go-ctx/blob/v0.12.0/docs/migration-v0.12.0.md)
+- [go-ctx v0.12.1 README](https://github.com/sedmess/go-ctx/blob/v0.12.1/readme.md)
+- [go-ctx v0.12.1 architecture](https://github.com/sedmess/go-ctx/blob/v0.12.1/docs/architecture.md)
+- [go-ctx Go 1.27 upgrade plan](https://github.com/sedmess/go-ctx/blob/v0.12.1/specs/002-go-1-27-upgrade/plan.md)
 - [Go package reference](https://pkg.go.dev/github.com/sedmess/go-ctx)
 
 The inherited rules most relevant here are:
@@ -159,7 +159,7 @@ registration does not rebuild the active router. Services must not rely on `Afte
 
 | Component | Primary namespace | Fallback and notes |
 |-----------|-------------------|--------------------|
-| Default HTTP server | `BASE_HTTP_LISTEN`, `BASE_HTTP_MAX_HEADER_SIZE`, `BASE_HTTP_READ_TIMEOUT`, `BASE_HTTP_WRITE_TIMEOUT` | Falls back to the corresponding `HTTP_*` key |
+| Default HTTP server | `BASE_HTTP_LISTEN`, `BASE_HTTP_MAX_HEADER_SIZE`, `BASE_HTTP_MAX_HEADER_VALUE_COUNT`, `BASE_HTTP_READ_TIMEOUT`, `BASE_HTTP_WRITE_TIMEOUT` | Falls back to the corresponding `HTTP_*` key; header-value count defaults to 500 |
 | Request body limit | `HTTP_MAX_REQUEST_SIZE` | Currently global across all server instances |
 | Default database | `BASE_DB_*` | Falls back to `DB_*`; accepts DSN, PostgreSQL fields, or `DB_SQLITE_PATH` |
 | Actuator server | `ACTUATOR_HTTP_*` | Listener settings fall back to `HTTP_*`; default listen address is `127.0.0.1:8089` |
@@ -173,6 +173,12 @@ When more than one HTTP server is composed, set distinct namespaced listen addre
 `HTTP_LISTEN` value is inherited by the default, actuator, and profiler servers; an incompatible
 duplicate now fails during initialization before any route is reported ready. A present-empty
 listen value remains present and preserves `net/http`'s empty-address behavior.
+
+`HTTP_MAX_HEADER_VALUE_COUNT` is a Go 1.27-backed parsing limit. It follows the same prefix/global
+fallback, defaults to 500, and requires a positive configured integer. Repeated transmitted header
+lines count separately, while comma-separated values on one line count once. The protocol server
+rejects an over-limit request before adapter middleware or handlers; `HTTP_MAX_HEADER_SIZE` remains
+an independent byte bound.
 
 Configuration values containing credentials or DSNs must not appear in logs, metrics, health
 details, examples, or committed environment fixtures.
@@ -190,6 +196,10 @@ registration phase need no service-state mutex; the close-once guard keeps the n
 `BeforeStop`/`Dispose` cleanup path idempotent. Disposal also covers initialization rollback,
 later-service failure, and restart. Persistent pre-initialization routes and middleware survive;
 generation registrations do not accumulate.
+
+Each generation also sets Go 1.27's `http.Server.MaxHeaderValueCount` before serving. Configuration
+validation precedes listener creation, so an invalid explicit count publishes no generation and
+reserves no socket.
 
 Authentication middleware controls access and stores a request-scoped Murmur3-derived `int64`
 identity. Bearer retains its established value; Basic now derives the same numeric representation
@@ -236,6 +246,8 @@ uninspectable exposure without it fails initialization. Reverse-proxied loopback
 operationally external and must configure tokens. Profiler validates input before admission,
 limits HTTP captures to 30 seconds, and uses one process-wide nonblocking gate with request/server
 cancellation and deferred runtime cleanup.
+Go 1.27's `goroutineleak` profile is available through the same named-profile route with debug 0;
+it adds no route, authentication exception, goroutine, or admission capacity.
 
 ### Logging and metrics
 
@@ -255,6 +267,10 @@ collection share one non-nil operation context; value and terminal-error sends o
 preserve order/capacity, emit at most one error, and close producer-owned output. A consumer cancels
 that shared context before abandoning a chain. `SessionContextStream` applies the same context to
 pool work, pagination, page delivery, and terminal completion.
+
+Go 1.27 generic `StreamingChan.Map` and `StreamingChan.FlatMap` methods retain their result element
+type while delegating to the same sequential producers. Package `FlatMap` is canonical and the
+historical `FlapMap` spelling remains as a deprecated forwarding alias.
 
 ## Resolved Architecture Risks
 
@@ -304,7 +320,7 @@ Before implementation, answer these questions in the feature specification and p
 
 1. Which exported identifier, service name, route, environment key, metric, or failure mode
    changes?
-2. Does the change preserve the package graph and `go-ctx` v0.12.0 runtime contract?
+2. Does the change preserve the package graph and `go-ctx` v0.12.1 runtime contract?
 3. Who owns and stops every new listener, pool, transaction, goroutine, channel, timer, lock,
    profile, or process-global registration?
 4. How do initialization failure, cancellation, repeated stop, and restart behave?

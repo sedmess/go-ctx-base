@@ -62,11 +62,19 @@ func CreateChannelBuffered[T any](
 ) StreamingChan[T]
 
 func Map[P, Q any](StreamingChan[P], func(P) Q) StreamingChan[Q]
+func FlatMap[P, Q any](StreamingChan[P], func(P) StreamingChan[Q]) StreamingChan[Q]
 func FlapMap[P, Q any](StreamingChan[P], func(P) StreamingChan[Q]) StreamingChan[Q]
+
+func (StreamingChan[T]) Map[Q any](func(T) Q) StreamingChan[Q]
+func (StreamingChan[T]) FlatMap[Q any](func(T) StreamingChan[Q]) StreamingChan[Q]
 ```
 
-The historical `FlapMap` spelling is a compatibility contract. Legacy streams cannot detect that
-a receive-only channel has been abandoned, so callers must drain them through closure.
+Go 1.27 generic methods retain the mapper's concrete result type without an `any` conversion.
+Direct calls infer `Q`; method values or expressions without assignment context may specify it,
+for example `stream.Map[string]`. Generic methods do not satisfy an interface containing the old
+non-generic signature. The correctly spelled package `FlatMap` is canonical; historical `FlapMap`
+remains as a deprecated compatibility alias. Legacy streams cannot detect that a receive-only
+channel has been abandoned, so callers must drain them through closure.
 
 Use the additive context-owned surface whenever a consumer may stop early:
 

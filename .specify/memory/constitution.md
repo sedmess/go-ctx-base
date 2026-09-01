@@ -1,27 +1,22 @@
 <!--
 Sync Impact Report
-- Version change: template (unratified) -> 1.0.0
-- Modified principles:
-  - Placeholder Principle 1 -> I. Stable Infrastructure Contracts
-  - Placeholder Principle 2 -> II. go-ctx-Aligned Composition
-  - Placeholder Principle 3 -> III. Deterministic Wiring and Configuration
-  - Placeholder Principle 4 -> IV. Lifecycle and Concurrency Ownership
-  - Placeholder Principle 5 -> V. Secure, Observable, Verified Operations
-- Added sections:
-  - Architecture and Technical Constraints
-  - Development Workflow and Quality Gates
-- Removed sections: placeholder section slots only
+- Version change: 1.0.0 -> 1.1.0
+- Modified principles: none; all five core principles remain unchanged
+- Modified sections:
+  - Architecture and Technical Constraints: Go 1.27 and go-ctx v0.12.1 baseline
+- Added sections: none
+- Removed sections: none
 - Templates requiring updates:
   - ✅ updated: .specify/templates/plan-template.md
   - ✅ updated: .specify/templates/spec-template.md
   - ✅ updated: .specify/templates/tasks-template.md
 - Runtime guidance:
-  - ✅ created: docs/architecture.md
+  - ✅ updated: docs/architecture.md
   - ✅ updated: readme.md
   - ✅ reviewed: utils.md; no architecture-policy change required
 - Framework guidance:
-  - ✅ reviewed: github.com/sedmess/go-ctx v0.12.0 readme, architecture guide,
-    migration guide, and public runtime contract
+  - ✅ reviewed: github.com/sedmess/go-ctx v0.12.1 source and Go 1.27 upgrade artifacts;
+    ctx kernel Go sources are unchanged from v0.12.0
 - Command guidance:
   - ✅ reviewed: all .agents/skills/speckit-*/SKILL.md files; no stale
     agent-specific or architecture-version references require changes
@@ -110,10 +105,10 @@ they are useful only when exposure is controlled and behavior is continuously ve
 ## Architecture and Technical Constraints
 
 - The module path MUST remain `github.com/sedmess/go-ctx-base` unless an explicitly approved
-  migration changes every consumer import path. The current Go 1.26 baseline and
-  `github.com/sedmess/go-ctx` v0.12.0 integration MUST remain supported until a planned,
+  migration changes every consumer import path. The current Go 1.27 baseline and
+  `github.com/sedmess/go-ctx` v0.12.1 integration MUST remain supported until a planned,
   documented upgrade changes them.
-- The supported runtime model is the `go-ctx` v0.12.0 in-process container with one active
+- The supported runtime model is the `go-ctx` v0.12.1 in-process container with one active
   application context per process. Application assembly belongs in consumer composition roots;
   `app_example.go` is documentation and validation, not framework-owned domain behavior.
 - `httpserver` owns REST transport, route registration, middleware, authentication helpers,
@@ -177,4 +172,4 @@ section and cannot silently waive a principle. `docs/architecture.md` is the imp
 oriented architecture reference and MUST remain consistent with this constitution and the
 pinned `go-ctx` runtime contract.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-21 | **Last Amended**: 2026-07-21
+**Version**: 1.1.0 | **Ratified**: 2026-07-21 | **Last Amended**: 2026-09-01

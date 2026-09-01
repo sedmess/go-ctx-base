@@ -21,6 +21,7 @@ import (
 const serverListenKey = "HTTP_LISTEN"
 const serverRequestSizeLimitKey = "HTTP_MAX_REQUEST_SIZE"
 const serverMaxHeaderSizeKey = "HTTP_MAX_HEADER_SIZE"
+const serverMaxHeaderValueCountKey = "HTTP_MAX_HEADER_VALUE_COUNT"
 const serverReadTimeoutKey = "HTTP_READ_TIMEOUT"
 const serverWriteTimeoutKey = "HTTP_WRITE_TIMEOUT"
 
@@ -89,6 +90,10 @@ func (instance *restServer) Init() error {
 	}
 
 	serverAddress := instance.getEnv(serverListenKey).AsStringDefault("127.0.0.1:" + strconv.Itoa(instance.defPort))
+	maxHeaderValueCount := instance.getEnv(serverMaxHeaderValueCountKey).AsIntDefault(http.DefaultMaxHeaderValueCount)
+	if maxHeaderValueCount <= 0 {
+		return fmt.Errorf("http server %q: %s must be positive", instance.name, serverMaxHeaderValueCountKey)
+	}
 	parentContext := instance.rootContext
 	if parentContext == nil {
 		parentContext = context.Background()
@@ -96,10 +101,11 @@ func (instance *restServer) Init() error {
 	requestContext, cancelRequests := context.WithCancel(parentContext)
 
 	server := &http.Server{
-		Addr:           serverAddress,
-		MaxHeaderBytes: instance.getEnv(serverMaxHeaderSizeKey).AsIntDefault(serverMaxHeaderSizeDefault),
-		ReadTimeout:    instance.getEnv(serverReadTimeoutKey).AsDurationDefault(serverReadTimeoutDefault),
-		WriteTimeout:   instance.getEnv(serverWriteTimeoutKey).AsDurationDefault(serverWriteTimeoutDefault),
+		Addr:                serverAddress,
+		MaxHeaderBytes:      instance.getEnv(serverMaxHeaderSizeKey).AsIntDefault(serverMaxHeaderSizeDefault),
+		MaxHeaderValueCount: maxHeaderValueCount,
+		ReadTimeout:         instance.getEnv(serverReadTimeoutKey).AsDurationDefault(serverReadTimeoutDefault),
+		WriteTimeout:        instance.getEnv(serverWriteTimeoutKey).AsDurationDefault(serverWriteTimeoutDefault),
 		BaseContext: func(net.Listener) context.Context {
 			return requestContext
 		},

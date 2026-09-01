@@ -33,7 +33,7 @@ This repository is the Go module `github.com/sedmess/go-ctx-base`. It is a reusa
 infrastructure adapters built on `github.com/sedmess/go-ctx`, not a domain application and not
 an alternative dependency-injection container.
 
-The current compatibility baseline is Go 1.26 and `go-ctx` v0.12.0. Preserve that baseline
+The current compatibility baseline is Go 1.27 and `go-ctx` v0.12.1. Preserve that baseline
 unless an explicitly planned change includes compatibility analysis, migration guidance,
 updated examples, and an intentional version decision. Because `go-ctx` is pre-v1, even a
 minor-version upgrade MUST be reviewed for source, lifecycle, configuration, and behavioral

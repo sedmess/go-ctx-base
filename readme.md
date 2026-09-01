@@ -2,8 +2,8 @@
 
 A modular framework for building contextualized Go applications with dependency injection, service management, and common infrastructure components.
 
-`go-ctx-base` is the infrastructure-adapter layer for
-[`github.com/sedmess/go-ctx` v0.12.0](https://github.com/sedmess/go-ctx/tree/v0.12.0).
+`go-ctx-base` requires Go 1.27 or later and is the infrastructure-adapter layer for
+[`github.com/sedmess/go-ctx` v0.12.1](https://github.com/sedmess/go-ctx/tree/v0.12.1).
 The base framework owns dependency injection, configuration, diagnostics, and application
 lifecycle; this module supplies HTTP, database, scheduling, actuator, profiler, logging, and
 utility packages.
@@ -30,7 +30,7 @@ engineering rules are defined by the [project constitution](.specify/memory/cons
 - Typed request handlers with automatic JSON marshaling
 - Authentication middleware (Bearer Token & Basic Auth)
 - Integrated Prometheus metrics collection
-- Request size limiting and timeout handling
+- Request body/header byte limits, a 500-value header-count default, and timeout handling
 - Early listener reservation and generation-safe graceful shutdown
 - **Exceptional**: Dual-format health checks (JSON/plaintext)
 
@@ -49,6 +49,7 @@ engineering rules are defined by the [project constitution](.specify/memory/cons
 
 ### Runtime Profiling (`profiler/`)
 - Runtime trace, CPU, and named profile endpoints
+- Go 1.27 leaked-goroutine profiles through the protected named-profile endpoint
 - A process-wide capacity-one admission gate
 - Request/server cancellation and a 30-second HTTP capture limit
 
@@ -93,6 +94,7 @@ are enabled, use distinct prefixed listen addresses so they do not inherit the s
 ```shell
 # Default HTTP server
 BASE_HTTP_LISTEN=127.0.0.1:8080
+BASE_HTTP_MAX_HEADER_VALUE_COUNT=500
 HTTP_MAX_REQUEST_SIZE=1048576
 
 # Independent control-plane servers (keep loopback-only unless protected)
@@ -127,6 +129,15 @@ before readiness, while `127.0.0.1:0` gives each server a distinct ephemeral por
 request context, SQL pool, database metric registration, scheduler, and lock state belong to one
 application generation and are released by stop/disposal before a cached service is restarted.
 
+`HTTP_MAX_HEADER_VALUE_COUNT` follows the same prefix/global fallback and defaults to 500.
+Repeated header lines count separately, while comma-separated values on one line count once.
+Malformed, zero, or negative configured values fail before readiness; over-limit requests are
+rejected before middleware or handlers. `HTTP_MAX_HEADER_SIZE` remains a separate byte limit.
+
+Go 1.27's leaked-goroutine profile uses the existing protected profiler route:
+`GET /profiler/named_profile?name=goroutineleak&debug=0`. It returns
+`goroutineleak.pprof` and retains the component's loopback/token policy and capacity-one gate.
+
 Context-aware channel constructors and transforms, `db.SessionContextStream`,
 `scheduler.ScheduleTaskCronContext`, `db.CloseConnection`, and
 `httpserver.IsLoopbackOnly` are additive APIs. Existing stream APIs remain compatible and must be
@@ -136,7 +147,9 @@ expression (or `unmatched`) and unsupported methods are labeled `OTHER`.
 
 See the [configuration model](docs/architecture.md#configuration-model) for exact namespaces
 and inherited `go-ctx` source precedence. Upgrade behavior is summarized in the
-[architecture-remediation migration guide](docs/migration-architecture-remediation.md).
+[v0.7.0 migration guide](docs/migration-v0.7.0.md); the earlier
+[architecture-remediation migration guide](docs/migration-architecture-remediation.md) remains
+the historical v0.6.0 behavior record.
 The reproducible HTTP and SQLite loopback benchmarks and their machine-specific throughput
 results are in the [performance baseline](docs/performance.md).
 
